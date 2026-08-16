@@ -33,7 +33,7 @@
     "c8": "^12.0.0",
     "eslint": "^10.8.0",
     "eslint-config-google": "^0.14.0",
-    "eslint-plugin-jsdoc": "^63.3.0",
+    "eslint-plugin-jsdoc": "^64.1.0",
     "globals": "^17.7.0"
   }
 }
