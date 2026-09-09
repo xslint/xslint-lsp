@@ -22,7 +22,7 @@
     "lint": "eslint src test"
   },
   "dependencies": {
-    "@maxonfjvipon/xslint": "^0.0.14",
+    "@maxonfjvipon/xslint": "^0.1.0",
     "vscode-languageserver": "^10.1.0",
     "vscode-languageserver-textdocument": "^1.0.12"
   },

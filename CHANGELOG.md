@@ -6,6 +6,10 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+## 0.0.9 - 2026-09-09
+
+- Bump `@maxonfjvipon/xslint` to 0.1.0.
+
 ## 0.0.8 - 2026-07-28
 
 - Bump `@maxonfjvipon/xslint` to 0.0.14.
