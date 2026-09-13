@@ -53,7 +53,7 @@
   },
   "dependencies": {
     "vscode-languageclient": "^10.1.1",
-    "xslint-lsp": "^0.0.8"
+    "xslint-lsp": "^0.0.9"
   },
   "devDependencies": {
     "@vscode/vsce": "^3.9.2"
