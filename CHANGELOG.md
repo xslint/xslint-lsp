@@ -6,6 +6,10 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+## 0.0.10 - 2026-09-17
+
+- Bump `@maxonfjvipon/xslint` to 0.2.0.
+
 - Lint a document among the workspace's other stylesheets, read at
   `initialize`, instead of on its own. Four of xslint's cross-file checks —
   `unused-function`, `unreachable-function`, `unused-variable`,
