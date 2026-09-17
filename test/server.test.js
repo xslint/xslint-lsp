@@ -6,7 +6,9 @@
 const test = require('node:test')
 const assert = require('node:assert')
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
+const {pathToFileURL} = require('node:url')
 const {spawn} = require('node:child_process')
 
 /**
@@ -115,6 +117,43 @@ const fixture = function(name) {
   return fs.readFileSync(path.resolve(__dirname, 'fixtures', name), 'utf-8')
 }
 
+/**
+ * A project in a fresh temporary directory, holding the named fixtures under
+ * their own names — the workspace an editor would announce at initialize.
+ * @param {Array.<string>} names - Fixture file names under test/fixtures
+ * @return {string} - The workspace directory
+ */
+const workspace = function(names) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xslint-lsp-'))
+  for (const name of names) {
+    fs.writeFileSync(path.join(root, name), fixture(name))
+  }
+  return root
+}
+
+/**
+ * Open a stylesheet of a workspace and return the diagnostics the server
+ * publishes for it, with the workspace announced at initialize the way an
+ * editor announces the folder it has open.
+ * @param {string} root - The workspace directory
+ * @param {string} name - The stylesheet to open, relative to the root
+ * @return {Promise.<Array.<object>>} - The published diagnostics
+ */
+const published = async function(root, name) {
+  const client = new Client()
+  client.send({id: 1, method: 'initialize', params: {
+    processId: process.pid, capabilities: {},
+    workspaceFolders: [{uri: pathToFileURL(root).href, name: 'w'}]}})
+  client.send({method: 'initialized', params: {}})
+  const opened = client.diagnostics()
+  client.send({method: 'textDocument/didOpen', params: {textDocument: {
+    uri: pathToFileURL(path.join(root, name)).href,
+    languageId: 'xsl', version: 1, text: fixture(name)}}})
+  const found = await opened
+  await client.close()
+  return found
+}
+
 test('reports, updates, and clears diagnostics over a document lifecycle',
   async function() {
     const client = new Client()
@@ -169,5 +208,27 @@ test('answers a code-action request, and offers none for an unknown document',
     assert.deepEqual(
       [some.some((one) => one.kind === 'source.fixAll'), none],
       [true, []],
+    )
+  })
+
+test('keeps a template that a sibling stylesheet calls out of the report',
+  async function() {
+    const found = await published(
+      workspace(['library.xsl', 'caller.xsl']), 'library.xsl',
+    )
+    assert.ok(
+      !found.some((one) => one.code === 'unused-named-template'),
+      'a template called from another stylesheet cannot be reported as unused',
+    )
+  })
+
+test('publishes no defect that belongs to another stylesheet',
+  async function() {
+    const found = await published(
+      workspace(['library.xsl', 'caller.xsl']), 'library.xsl',
+    )
+    assert.ok(
+      !found.some((one) => one.code === 'starts-with-double-slash'),
+      'a defect of a corpus stylesheet cannot be published for the open one',
     )
   })

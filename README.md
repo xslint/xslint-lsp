@@ -27,7 +27,8 @@ rule engine to keep in sync.
 
 ```text
 editor  ──(LSP over stdio)──▶  src/server.js
-                                  │  lint(buffer)      → @xslint/xslint
+                                  │  sources(corpus, buffer) → src/corpus.js
+                                  │  lint(sources)      → @xslint/xslint
                                   │  diagnostics(defects)  → src/diagnostics.js
                                   ▼
 editor  ◀──(publishDiagnostics)──  { range, severity, code: rule, message }
@@ -37,6 +38,15 @@ The server keeps open documents in sync, re-lints on every change (checking the
 live buffer, not the saved file), and clears a file's diagnostics when it
 closes. Each xslint defect `{name, severity, message, line, pos}` becomes an LSP
 diagnostic whose `code` is the rule name and whose `source` is `xslint`.
+
+A document is linted **among the workspace's other stylesheets**, read once at
+`initialize` from the folders the client announces, with the live buffer
+standing in for its own file. xslint's cross-file checks — `unused-function`,
+`unreachable-function`, `unused-variable`, `unused-named-template` — call a
+declaration dead when nothing in the corpus refers to it, so a library module
+linted on its own would be told every symbol it exports is unused. Only the
+defects found in the open document are published; the rest of the corpus is
+there so those checks can see a declaration used elsewhere.
 
 It also offers **code actions**: a quick-fix on each fixable defect and a
 *fix all* action for the safe fixes. Both are computed by xslint's own `fixed`
@@ -81,7 +91,8 @@ npm run lint    # eslint (google + @stylistic)
 ```
 
 Tests run on Node's built-in runner (`node --test`). `test/diagnostics.test.js`
-covers the defect→diagnostic mapping; `test/server.test.js` spawns the server
+covers the defect→diagnostic mapping; `test/corpus.test.js` covers the
+workspace walk and the buffer swap; `test/server.test.js` spawns the server
 and drives it through open/change/close, asserting the diagnostics it publishes
 — and it exits the server cleanly so its subprocess coverage is captured.
 

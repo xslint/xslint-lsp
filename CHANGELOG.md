@@ -6,6 +6,13 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Lint a document among the workspace's other stylesheets, read at
+  `initialize`, instead of on its own. xslint's cross-file checks —
+  `unused-function`, `unreachable-function`, `unused-variable`,
+  `unused-named-template` — call a declaration dead when nothing in the corpus
+  refers to it, so a library module used to be told every symbol it exports is
+  unused.
+
 ## 0.0.9 - 2026-09-09
 
 - Bump `@maxonfjvipon/xslint` to 0.1.0.
