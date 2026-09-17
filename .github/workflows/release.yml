@@ -81,7 +81,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ github.ref_name }}
-        run: gh release upload "${VERSION}" "client/xslint-vscode-${VERSION}.vsix"
+        run: gh release upload "${VERSION}" "client/xslint-vscode-${VERSION}.vsix" --clobber
       - name: Publish to Open VSX
         if: env.OVSX != ''
         working-directory: client
@@ -89,4 +89,10 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           npx --yes ovsx create-namespace maxonfjvipon -p "${OVSX}" || true
-          npx --yes ovsx publish "xslint-vscode-${VERSION}.vsix" -p "${OVSX}"
+          for attempt in $(seq 1 5); do
+            echo "publishing ${VERSION} to Open VSX, attempt ${attempt}"
+            npx --yes ovsx publish "xslint-vscode-${VERSION}.vsix" -p "${OVSX}" && exit 0
+            sleep 30
+          done
+          echo "Open VSX refused ${VERSION} on every attempt"
+          exit 1
