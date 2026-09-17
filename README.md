@@ -27,7 +27,8 @@ rule engine to keep in sync.
 
 ```text
 editor  ──(LSP over stdio)──▶  src/server.js
-                                  │  lint(buffer)      → @xslint/xslint
+                                  │  sources(corpus, buffer) → src/corpus.js
+                                  │  lint(sources)      → @xslint/xslint
                                   │  diagnostics(defects)  → src/diagnostics.js
                                   ▼
 editor  ◀──(publishDiagnostics)──  { range, severity, code: rule, message }
@@ -37,6 +38,27 @@ The server keeps open documents in sync, re-lints on every change (checking the
 live buffer, not the saved file), and clears a file's diagnostics when it
 closes. Each xslint defect `{name, severity, message, line, pos}` becomes an LSP
 diagnostic whose `code` is the rule name and whose `source` is `xslint`.
+
+A document is linted **among the workspace's other stylesheets**, read at
+`initialize` from the folders the client announces, with the live buffer
+standing in for its own file. Four of xslint's cross-file checks —
+`unused-function`, `unreachable-function`, `unused-variable` and
+`unused-named-template` — call a declaration dead when nothing in the corpus
+refers to it, so a library module linted on its own would be told every symbol
+it exports is unused, and two more — `circular-import` and `redundant-import` —
+read the files an `xsl:import` names. Only the defects found in the open
+document are published; the rest of the corpus is there so those checks can see
+a declaration used elsewhere.
+
+Saving a document takes it back into the corpus and re-checks every open one,
+so writing the call that brings a template to life clears the complaint on the
+stylesheet that declares it. Only a stylesheet the walk itself would have found
+is taken: one saved from outside the announced folders is another project's,
+and a corpus holding it would vouch for declarations this one never uses. A
+stylesheet added, deleted, or rewritten **outside** the editor is not noticed
+until the server restarts, and neither is a folder added to the workspace after
+startup — the walk skips dot-directories, `node_modules` and `target`, and does
+not follow symbolic links.
 
 It also offers **code actions**: a quick-fix on each fixable defect and a
 *fix all* action for the safe fixes. Both are computed by xslint's own `fixed`
@@ -81,7 +103,8 @@ npm run lint    # eslint (google + @stylistic)
 ```
 
 Tests run on Node's built-in runner (`node --test`). `test/diagnostics.test.js`
-covers the defect→diagnostic mapping; `test/server.test.js` spawns the server
+covers the defect→diagnostic mapping; `test/corpus.test.js` covers the
+workspace walk and the buffer swap; `test/server.test.js` spawns the server
 and drives it through open/change/close, asserting the diagnostics it publishes
 — and it exits the server cleanly so its subprocess coverage is captured.
 

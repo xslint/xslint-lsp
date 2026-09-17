@@ -23,6 +23,21 @@ const document = function(name) {
 }
 
 /**
+ * A one-stylesheet corpus standing for the rest of a workspace, under a name
+ * that is not the document's own.
+ * @param {string} name - Fixture file name under test/fixtures
+ * @return {Array.<{file: string, content: string}>} - The corpus
+ */
+const corpus = function(name) {
+  return [{
+    file: 'elsewhere.xsl',
+    content: fs.readFileSync(
+      path.resolve(__dirname, 'fixtures', name), 'utf-8',
+    ),
+  }]
+}
+
+/**
  * A range covering the whole fixture.
  * @type {object}
  */
@@ -30,7 +45,7 @@ const WHOLE = {start: {line: 0, character: 0}, end: {line: 99, character: 0}}
 
 test('offers a quick-fix for a fixable defect in range', function() {
   assert.ok(
-    actions(document('fixable.xsl'), WHOLE).some(
+    actions(document('fixable.xsl'), WHOLE, []).some(
       (action) => action.kind === 'quickfix' &&
         action.title.includes('redundant-namespace-declarations'),
     ),
@@ -39,14 +54,14 @@ test('offers a quick-fix for a fixable defect in range', function() {
 
 test('offers a fix-all action when there are auto-fixes', function() {
   assert.ok(
-    actions(document('fixable.xsl'), WHOLE).some(
+    actions(document('fixable.xsl'), WHOLE, []).some(
       (action) => action.kind === 'source.fixAll',
     ),
   )
 })
 
 test('the fix-all edit removes every auto-fixable defect', function() {
-  const all = actions(document('fixable.xsl'), WHOLE).find(
+  const all = actions(document('fixable.xsl'), WHOLE, []).find(
     (action) => action.kind === 'source.fixAll',
   )
   const text = all.edit.changes['file:///t.xsl'][0].newText
@@ -55,7 +70,7 @@ test('the fix-all edit removes every auto-fixable defect', function() {
 
 test('offers no fix-all when nothing is auto-fixable', function() {
   assert.ok(
-    !actions(document('violations.xsl'), WHOLE).some(
+    !actions(document('violations.xsl'), WHOLE, []).some(
       (action) => action.kind === 'source.fixAll',
     ),
   )
@@ -65,7 +80,7 @@ test('skips a fixable defect below the requested range', function() {
   assert.ok(
     !actions(
       document('fixable.xsl'),
-      {start: {line: 0, character: 0}, end: {line: 0, character: 0}},
+      {start: {line: 0, character: 0}, end: {line: 0, character: 0}}, [],
     ).some((action) => action.kind === 'quickfix'),
   )
 })
@@ -74,7 +89,16 @@ test('skips a fixable defect above the requested range', function() {
   assert.ok(
     !actions(
       document('fixable.xsl'),
-      {start: {line: 9, character: 0}, end: {line: 20, character: 0}},
+      {start: {line: 9, character: 0}, end: {line: 20, character: 0}}, [],
     ).some((action) => action.kind === 'quickfix'),
+  )
+})
+
+test('offers no quick-fix for a defect of another stylesheet', function() {
+  assert.ok(
+    !actions(document('library.xsl'), WHOLE, corpus('caller.xsl')).some(
+      (action) => action.title.includes('starts-with-double-slash'),
+    ),
+    'a fix belonging to a corpus stylesheet cannot be offered on the open one',
   )
 })
