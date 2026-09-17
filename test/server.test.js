@@ -319,3 +319,35 @@ test('takes a saved stylesheet into the corpus and re-checks the open ones',
       'a call written and saved next door cannot leave the squiggle standing',
     )
   })
+
+test('takes no stylesheet of another project into the corpus',
+  async function() {
+    const root = workspace(['library.xsl'])
+    const away = workspace(['caller.xsl'])
+    const library = pathToFileURL(path.join(root, 'library.xsl')).href
+    const stranger = pathToFileURL(path.join(away, 'caller.xsl')).href
+    const client = new Client()
+    client.send({id: 1, method: 'initialize',
+      params: {processId: process.pid, capabilities: {}, ...folder(root)}})
+    client.send({method: 'initialized', params: {}})
+    const opened = client.about(library)
+    client.send({method: 'textDocument/didOpen', params: {textDocument: {
+      uri: library, languageId: 'xsl', version: 1,
+      text: fixture('library.xsl')}}})
+    await opened
+    client.send({method: 'textDocument/didOpen', params: {textDocument: {
+      uri: stranger, languageId: 'xsl', version: 1,
+      text: fixture('caller.xsl')}}})
+    const shown = client.about(library)
+    client.send({method: 'textDocument/didSave',
+      params: {textDocument: {uri: stranger}}})
+    client.send({method: 'textDocument/didChange', params: {
+      textDocument: {uri: library, version: 2},
+      contentChanges: [{text: `${fixture('library.xsl')}\n`}]}})
+    const found = await shown
+    await client.close()
+    assert.ok(
+      found.some((one) => one.code === 'unused-named-template'),
+      'a stylesheet outside the workspace cannot vouch for a template in it',
+    )
+  })

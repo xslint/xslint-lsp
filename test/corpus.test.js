@@ -10,7 +10,7 @@ const os = require('node:os')
 const path = require('node:path')
 const {pathToFileURL} = require('node:url')
 const {TextDocument} = require('vscode-languageserver-textdocument')
-const {file, stylesheets, sources} = require('../src/corpus')
+const {belongs, file, stylesheets, sources} = require('../src/corpus')
 
 /**
  * A project in a fresh temporary directory, holding the given files under the
@@ -96,3 +96,53 @@ test('stands a uri in for the path a buffer without a file cannot give',
   function() {
     assert.equal(file('untitled:Untitled-1'), 'untitled:Untitled-1')
   })
+
+/**
+ * What a saved path is to a workspace rooted at `/w`: the name it stands
+ * under, and whether the corpus is its place.
+ * @type {Array.<{name: string, ask: string, belongs: boolean}>}
+ */
+const SAVED = [
+  {name: 'takes a stylesheet of the workspace',
+    ask: 'lib.xsl', belongs: true},
+  {name: 'takes one buried in the workspace',
+    ask: 'deep/down/lib.xsl', belongs: true},
+  {name: 'leaves one under a directory the walk passes by',
+    ask: 'node_modules/dep/lib.xsl', belongs: false},
+  {name: 'leaves one under a directory the walk never opens',
+    ask: '.git/lib.xsl', belongs: false},
+  {name: 'leaves a file that is no stylesheet',
+    ask: 'notes.txt', belongs: false},
+]
+
+for (const row of SAVED) {
+  test(row.name, function() {
+    assert.equal(
+      belongs(
+        [path.join(path.sep, 'w')],
+        path.join(path.sep, 'w', ...row.ask.split('/')),
+      ),
+      row.belongs,
+    )
+  })
+}
+
+test('leaves a stylesheet standing beside the workspace', function() {
+  assert.ok(
+    !belongs(
+      [path.join(path.sep, 'w')], path.join(path.sep, 'elsewhere', 'lib.xsl'),
+    ),
+  )
+})
+
+test('leaves a stylesheet standing on another drive', function() {
+  assert.ok(!belongs([path.join(path.sep, 'w')], 'D:\\project\\lib.xsl'))
+})
+
+test('leaves a buffer that names no file at all', function() {
+  assert.ok(!belongs([path.join(path.sep, 'w')], 'untitled:Untitled-1'))
+})
+
+test('leaves every stylesheet when the client announced no folder', function() {
+  assert.ok(!belongs([], path.join(path.sep, 'w', 'lib.xsl')))
+})

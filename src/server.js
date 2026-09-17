@@ -11,7 +11,7 @@ const {TextDocument} = require('vscode-languageserver-textdocument')
 const {lint} = require('@maxonfjvipon/xslint')
 const {diagnostics} = require('./diagnostics')
 const {actions} = require('./actions')
-const {file, stylesheets, sources} = require('./corpus')
+const {belongs, file, stylesheets, sources} = require('./corpus')
 
 /**
  * The connection to the editor, over whatever transport the client chose
@@ -32,6 +32,13 @@ const documents = new TextDocuments(TextDocument)
  * @type {Array.<{file: string, content: string}>}
  */
 let corpus = []
+
+/**
+ * The folders the client announced, which is what decides whether a saved
+ * stylesheet is the workspace's to lint against.
+ * @type {Array.<string>}
+ */
+let roots = []
 
 /*
  * @todo #45:90min Lint the buffer on a keystroke and the corpus on idle. A
@@ -92,7 +99,8 @@ const folders = function(params) {
  * @return {object} - The initialize result
  */
 const initialize = function(params) {
-  corpus = stylesheets(folders(params))
+  roots = folders(params)
+  corpus = stylesheets(roots)
   return {
     capabilities: {
       textDocumentSync: {
@@ -135,17 +143,20 @@ const changed = function(event) {
  */
 
 /**
- * Take a saved document into the corpus and re-check every open one. A
- * cross-file check should answer to what the workspace now holds rather than
- * to what it held at startup, and the squiggle a save clears is usually on
- * another file — writing the call that brings a template to life leaves the
- * complaint on the stylesheet that declares it.
+ * Take a saved stylesheet of the workspace into the corpus and re-check every
+ * open one. A cross-file check should answer to what the workspace now holds
+ * rather than to what it held at startup, and the squiggle a save clears is
+ * usually on another file — writing the call that brings a template to life
+ * leaves the complaint on the stylesheet that declares it. A document saved
+ * outside the workspace is none of its business, so it is passed over.
  * @param {{document: TextDocument}} event - The save event
  */
 const saved = function(event) {
-  corpus = sources(corpus, event.document)
-  for (const document of documents.all()) {
-    check(document)
+  if (belongs(roots, file(event.document.uri))) {
+    corpus = sources(corpus, event.document)
+    for (const document of documents.all()) {
+      check(document)
+    }
   }
 }
 

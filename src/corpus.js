@@ -42,6 +42,34 @@ const skipped = function(name) {
 }
 
 /**
+ * Whether a path lies below a directory, under no name the walk passes by. A
+ * path on another drive lies below nothing here, and `path.relative` says so
+ * by answering an absolute path of its own, which Windows alone produces.
+ * @param {string} dir - The directory
+ * @param {string} pth - The path to judge
+ * @return {boolean} - True where the walk would have reached it
+ */
+const inside = function(dir, pth) {
+  const below = path.relative(dir, pth)
+  return !path.isAbsolute(below) &&
+    !below.split(path.sep).slice(0, -1).some(skipped)
+}
+
+/**
+ * Whether the corpus is a path's place: the walk would have found it below one
+ * of the workspace's folders. An editor also saves stylesheets the workspace
+ * does not hold — a scratch file, a module of another project — and letting one
+ * of those into the corpus makes it vouch for declarations nothing in the
+ * project uses, silencing a cross-file check over code the project never sees.
+ * @param {Array.<string>} folders - The workspace's root directories
+ * @param {string} pth - The path to judge
+ * @return {boolean} - True when the corpus is where it belongs
+ */
+const belongs = function(folders, pth) {
+  return pth.endsWith('.xsl') && folders.some((dir) => inside(dir, pth))
+}
+
+/**
  * Every stylesheet below a directory. A symbolic link is neither a directory
  * nor a file here, so the walk steps over one rather than following it into a
  * tree it has already read, or into a loop. The extension is the one xslint's
@@ -98,6 +126,7 @@ const sources = function(corpus, document) {
 
 module.exports = {
   file,
+  belongs,
   stylesheets,
   sources,
 }

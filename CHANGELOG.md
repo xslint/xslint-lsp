@@ -7,13 +7,16 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## Unreleased
 
 - Lint a document among the workspace's other stylesheets, read at
-  `initialize`, instead of on its own. xslint's cross-file checks —
+  `initialize`, instead of on its own. Four of xslint's cross-file checks —
   `unused-function`, `unreachable-function`, `unused-variable`,
-  `unused-named-template`, `circular-import` — call a declaration dead when
-  nothing in the corpus refers to it, so a library module used to be told every
-  symbol it exports is unused.
-- Take a saved document back into the corpus and re-check the open ones, so the
-  edit that answers a cross-file complaint clears it. Changes made outside the
+  `unused-named-template` — call a declaration dead when nothing in the corpus
+  refers to it, so a library module used to be told every symbol it exports is
+  unused, and `circular-import` and `redundant-import` read what an
+  `xsl:import` names.
+- Take a saved stylesheet of the workspace back into the corpus and re-check
+  the open ones, so the edit that answers a cross-file complaint clears it. One
+  saved from outside the announced folders is left out, rather than allowed to
+  vouch for declarations the workspace never uses. Changes made outside the
   editor are still only picked up on restart.
 
 ## 0.0.9 - 2026-09-09
