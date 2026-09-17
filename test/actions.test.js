@@ -23,6 +23,21 @@ const document = function(name) {
 }
 
 /**
+ * A one-stylesheet corpus standing for the rest of a workspace, under a name
+ * that is not the document's own.
+ * @param {string} name - Fixture file name under test/fixtures
+ * @return {Array.<{file: string, content: string}>} - The corpus
+ */
+const corpus = function(name) {
+  return [{
+    file: 'elsewhere.xsl',
+    content: fs.readFileSync(
+      path.resolve(__dirname, 'fixtures', name), 'utf-8',
+    ),
+  }]
+}
+
+/**
  * A range covering the whole fixture.
  * @type {object}
  */
@@ -76,5 +91,14 @@ test('skips a fixable defect above the requested range', function() {
       document('fixable.xsl'),
       {start: {line: 9, character: 0}, end: {line: 20, character: 0}}, [],
     ).some((action) => action.kind === 'quickfix'),
+  )
+})
+
+test('offers no quick-fix for a defect of another stylesheet', function() {
+  assert.ok(
+    !actions(document('library.xsl'), WHOLE, corpus('caller.xsl')).some(
+      (action) => action.title.includes('starts-with-double-slash'),
+    ),
+    'a fix belonging to a corpus stylesheet cannot be offered on the open one',
   )
 })

@@ -39,14 +39,22 @@ live buffer, not the saved file), and clears a file's diagnostics when it
 closes. Each xslint defect `{name, severity, message, line, pos}` becomes an LSP
 diagnostic whose `code` is the rule name and whose `source` is `xslint`.
 
-A document is linted **among the workspace's other stylesheets**, read once at
+A document is linted **among the workspace's other stylesheets**, read at
 `initialize` from the folders the client announces, with the live buffer
 standing in for its own file. xslint's cross-file checks — `unused-function`,
-`unreachable-function`, `unused-variable`, `unused-named-template` — call a
-declaration dead when nothing in the corpus refers to it, so a library module
-linted on its own would be told every symbol it exports is unused. Only the
-defects found in the open document are published; the rest of the corpus is
-there so those checks can see a declaration used elsewhere.
+`unreachable-function`, `unused-variable`, `unused-named-template`, and
+`circular-import` — call a declaration dead when nothing in the corpus refers
+to it, so a library module linted on its own would be told every symbol it
+exports is unused. Only the defects found in the open document are published;
+the rest of the corpus is there so those checks can see a declaration used
+elsewhere.
+
+Saving a document takes it back into the corpus and re-checks every open one,
+so writing the call that brings a template to life clears the complaint on the
+stylesheet that declares it. A stylesheet added, deleted, or rewritten
+**outside** the editor is not noticed until the server restarts, and neither is
+a folder added to the workspace after startup — the walk skips dot-directories,
+`node_modules` and `target`, and does not follow symbolic links.
 
 It also offers **code actions**: a quick-fix on each fixable defect and a
 *fix all* action for the safe fixes. Both are computed by xslint's own `fixed`

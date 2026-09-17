@@ -34,12 +34,18 @@ const documents = new TextDocuments(TextDocument)
 let corpus = []
 
 /*
- * @todo #45:60min Parse the corpus once, not on every keystroke. A change now
- *  re-parses every stylesheet of the workspace — 340ms on a 54-file project —
- *  because `lint` takes raw sources and cannot reuse the documents it parsed a
- *  keystroke ago. Either let xslint hand the parsed corpus back so it can be
- *  passed in again, or keep the parsed stylesheets here and re-parse only the
- *  buffer that changed.
+ * @todo #45:90min Lint the buffer on a keystroke and the corpus on idle. A
+ *  change now lints every stylesheet of the workspace — 260ms for the 54 of
+ *  objectionary/eo, linear in the XPath a corpus holds — and nothing
+ *  debounces it, so a few hundred stylesheets leave the server unable to
+ *  answer between keystrokes. Only six checks read more than one file: the
+ *  four of corpus-linter and the two of import-linter, 7ms together over a
+ *  corpus already parsed. The rest judges each stylesheet alone, and the
+ *  filter below throws all but one file of it away. Lint the buffer by itself
+ *  with those six suppressed, and run the corpus pass on save or when the
+ *  editor falls idle. xslint's STAGES names the checks a stage owns but not
+ *  which of them read a second file, so that list is worth asking upstream
+ *  for rather than pinning here.
  */
 
 /**
@@ -61,20 +67,39 @@ const check = function(document) {
 }
 
 /**
+ * The directories of the workspace the client announced. A client that speaks
+ * only the older half of the protocol names a single root rather than a list
+ * of folders, and is answered the same way.
+ * @param {{workspaceFolders: Array.<{uri: string}>, rootUri: string}} params -
+ *  The client's initialize parameters
+ * @return {Array.<string>} - The directories to read the corpus from
+ */
+const folders = function(params) {
+  const roots = (params.workspaceFolders ?? []).map((folder) => folder.uri)
+  if (roots.length === 0 && params.rootUri) {
+    roots.push(params.rootUri)
+  }
+  return roots.map((uri) => file(uri))
+}
+
+/**
  * Read the workspace the client has open and announce what the server
  * supports: full-document text sync is enough, since every check re-reads the
- * whole buffer anyway.
- * @param {{workspaceFolders: Array.<{uri: string}>}} params - The client's
- *  initialize parameters, naming the folders of its workspace
+ * whole buffer anyway, and saves are asked for because a save is what takes an
+ * edit into the corpus the cross-file checks are judged against.
+ * @param {{workspaceFolders: Array.<{uri: string}>, rootUri: string}} params -
+ *  The client's initialize parameters
  * @return {object} - The initialize result
  */
 const initialize = function(params) {
-  corpus = stylesheets(
-    (params.workspaceFolders ?? []).map((folder) => file(folder.uri)),
-  )
+  corpus = stylesheets(folders(params))
   return {
     capabilities: {
-      textDocumentSync: TextDocumentSyncKind.Full,
+      textDocumentSync: {
+        openClose: true,
+        change: TextDocumentSyncKind.Full,
+        save: true,
+      },
       codeActionProvider: {codeActionKinds: ['quickfix', 'source.fixAll']},
     },
   }
@@ -98,6 +123,32 @@ const changed = function(event) {
   check(event.document)
 }
 
+/*
+ * @todo #45:60min Keep the corpus abreast of the files the editor does not
+ *  save. A save takes that one document into the corpus, but a stylesheet
+ *  added, deleted, or rewritten outside the editor — a branch checked out, a
+ *  generator run, a sibling edited in another window — is not noticed, and a
+ *  folder added to the workspace after startup is not read at all. Watch the
+ *  workspace for `.xsl` changes through `workspace/didChangeWatchedFiles`,
+ *  which the client is willing to register for, and answer
+ *  `workspace/didChangeWorkspaceFolders` by reading the folders that arrive.
+ */
+
+/**
+ * Take a saved document into the corpus and re-check every open one. A
+ * cross-file check should answer to what the workspace now holds rather than
+ * to what it held at startup, and the squiggle a save clears is usually on
+ * another file — writing the call that brings a template to life leaves the
+ * complaint on the stylesheet that declares it.
+ * @param {{document: TextDocument}} event - The save event
+ */
+const saved = function(event) {
+  corpus = sources(corpus, event.document)
+  for (const document of documents.all()) {
+    check(document)
+  }
+}
+
 /**
  * Clear a document's diagnostics when it closes, so stale squiggles do not
  * linger on a file that is no longer open.
@@ -110,6 +161,7 @@ const closed = function(event) {
 connection.onInitialize(initialize)
 connection.onCodeAction(acted)
 documents.onDidChangeContent(changed)
+documents.onDidSave(saved)
 documents.onDidClose(closed)
 documents.listen(connection)
 connection.listen()

@@ -42,15 +42,18 @@ const skipped = function(name) {
 }
 
 /**
- * Every stylesheet below a directory.
+ * Every stylesheet below a directory. A symbolic link is neither a directory
+ * nor a file here, so the walk steps over one rather than following it into a
+ * tree it has already read, or into a loop. The extension is the one xslint's
+ * own walk takes, so an editor and a command line agree on what the corpus is.
  * @param {string} dir - The directory to walk
  * @return {Array.<string>} - Paths of the `.xsl` files under it
  */
 const xsls = function(dir) {
-  const found = []
+  let found = []
   for (const entry of fs.readdirSync(dir, {withFileTypes: true})) {
     if (entry.isDirectory() && !skipped(entry.name)) {
-      found.push(...xsls(path.join(dir, entry.name)))
+      found = found.concat(xsls(path.join(dir, entry.name)))
     } else if (entry.isFile() && entry.name.endsWith('.xsl')) {
       found.push(path.join(dir, entry.name))
     }

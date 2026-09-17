@@ -26,6 +26,8 @@ class Client {
     )
     this.buffer = Buffer.alloc(0)
     this.waiting = []
+    this.awaited = new Map()
+    this.latest = new Map()
     this.responses = new Map()
     this.nextId = 1000
     this.server.stdout.on('data', (chunk) => this.consume(chunk))
@@ -63,7 +65,15 @@ class Client {
       )
       this.buffer = this.buffer.subarray(start + length)
       if (message.method === 'textDocument/publishDiagnostics') {
-        this.waiting.shift()(message.params.diagnostics)
+        const {uri, diagnostics} = message.params
+        this.latest.set(uri, diagnostics)
+        if (this.awaited.has(uri)) {
+          this.awaited.get(uri)(diagnostics)
+          this.awaited.delete(uri)
+        }
+        if (this.waiting.length > 0) {
+          this.waiting.shift()(diagnostics)
+        }
       } else if (Object.hasOwn(message, 'result') && this.responses.has(message.id)) {
         const resolve = this.responses.get(message.id)
         this.responses.delete(message.id)
@@ -79,6 +89,33 @@ class Client {
    */
   diagnostics() {
     return new Promise((resolve) => this.waiting.push(resolve))
+  }
+
+  /**
+   * A promise for the next diagnostics notification about one document, which
+   * the server may publish among notifications about its siblings.
+   * @param {string} uri - The document URI
+   * @return {Promise.<Array.<object>>} - That document's diagnostics
+   */
+  about(uri) {
+    return new Promise((resolve) => this.awaited.set(uri, resolve))
+  }
+
+  /**
+   * What the editor would be showing for a document: the diagnostics last
+   * published about it, having waited a bounded moment for a fresh
+   * notification. A server that never republishes leaves the stale ones
+   * standing, which is exactly what the editor would show, so a regression
+   * fails the assertion instead of hanging on a promise that never settles.
+   * @param {string} uri - The document URI
+   * @return {Promise.<Array.<object>>} - The diagnostics it would be showing
+   */
+  async showing(uri) {
+    await Promise.race([
+      this.about(uri),
+      new Promise((resolve) => setTimeout(resolve, 3000).unref()),
+    ])
+    return this.latest.get(uri)
   }
 
   /**
@@ -133,17 +170,17 @@ const workspace = function(names) {
 
 /**
  * Open a stylesheet of a workspace and return the diagnostics the server
- * publishes for it, with the workspace announced at initialize the way an
- * editor announces the folder it has open.
+ * publishes for it, with the workspace announced at initialize the way the
+ * given announcement has an editor name it.
  * @param {string} root - The workspace directory
  * @param {string} name - The stylesheet to open, relative to the root
+ * @param {object} announced - The initialize parameters naming the workspace
  * @return {Promise.<Array.<object>>} - The published diagnostics
  */
-const published = async function(root, name) {
+const published = async function(root, name, announced) {
   const client = new Client()
   client.send({id: 1, method: 'initialize', params: {
-    processId: process.pid, capabilities: {},
-    workspaceFolders: [{uri: pathToFileURL(root).href, name: 'w'}]}})
+    processId: process.pid, capabilities: {}, ...announced}})
   client.send({method: 'initialized', params: {}})
   const opened = client.diagnostics()
   client.send({method: 'textDocument/didOpen', params: {textDocument: {
@@ -152,6 +189,16 @@ const published = async function(root, name) {
   const found = await opened
   await client.close()
   return found
+}
+
+/**
+ * The workspace announced as a folder, the way an editor that speaks the whole
+ * protocol names what it has open.
+ * @param {string} root - The workspace directory
+ * @return {object} - Initialize parameters naming that folder
+ */
+const folder = function(root) {
+  return {workspaceFolders: [{uri: pathToFileURL(root).href, name: 'w'}]}
 }
 
 test('reports, updates, and clears diagnostics over a document lifecycle',
@@ -213,9 +260,8 @@ test('answers a code-action request, and offers none for an unknown document',
 
 test('keeps a template that a sibling stylesheet calls out of the report',
   async function() {
-    const found = await published(
-      workspace(['library.xsl', 'caller.xsl']), 'library.xsl',
-    )
+    const root = workspace(['library.xsl', 'caller.xsl'])
+    const found = await published(root, 'library.xsl', folder(root))
     assert.ok(
       !found.some((one) => one.code === 'unused-named-template'),
       'a template called from another stylesheet cannot be reported as unused',
@@ -224,11 +270,52 @@ test('keeps a template that a sibling stylesheet calls out of the report',
 
 test('publishes no defect that belongs to another stylesheet',
   async function() {
-    const found = await published(
-      workspace(['library.xsl', 'caller.xsl']), 'library.xsl',
-    )
+    const root = workspace(['library.xsl', 'caller.xsl'])
+    const found = await published(root, 'library.xsl', folder(root))
     assert.ok(
       !found.some((one) => one.code === 'starts-with-double-slash'),
       'a defect of a corpus stylesheet cannot be published for the open one',
+    )
+  })
+
+test('reads the workspace a client announces as a single root',
+  async function() {
+    const root = workspace(['library.xsl', 'caller.xsl'])
+    const found = await published(
+      root, 'library.xsl', {rootUri: pathToFileURL(root).href},
+    )
+    assert.ok(
+      !found.some((one) => one.code === 'unused-named-template'),
+      'a client naming one root cannot be left without a corpus',
+    )
+  })
+
+test('takes a saved stylesheet into the corpus and re-checks the open ones',
+  async function() {
+    const root = workspace(['library.xsl', 'violations.xsl'])
+    const library = pathToFileURL(path.join(root, 'library.xsl')).href
+    const sibling = pathToFileURL(path.join(root, 'violations.xsl')).href
+    const client = new Client()
+    client.send({id: 1, method: 'initialize',
+      params: {processId: process.pid, capabilities: {}, ...folder(root)}})
+    client.send({method: 'initialized', params: {}})
+    const opened = client.about(library)
+    client.send({method: 'textDocument/didOpen', params: {textDocument: {
+      uri: library, languageId: 'xsl', version: 1,
+      text: fixture('library.xsl')}}})
+    await opened
+    client.send({method: 'textDocument/didOpen', params: {textDocument: {
+      uri: sibling, languageId: 'xsl', version: 1,
+      text: fixture('violations.xsl')}}})
+    client.send({method: 'textDocument/didChange', params: {
+      textDocument: {uri: sibling, version: 2},
+      contentChanges: [{text: fixture('caller.xsl')}]}})
+    client.send({method: 'textDocument/didSave',
+      params: {textDocument: {uri: sibling}}})
+    const found = await client.showing(library)
+    await client.close()
+    assert.ok(
+      !found.some((one) => one.code === 'unused-named-template'),
+      'a call written and saved next door cannot leave the squiggle standing',
     )
   })
