@@ -108,7 +108,7 @@ const initialize = function(params) {
         change: TextDocumentSyncKind.Full,
         save: true,
       },
-      codeActionProvider: {codeActionKinds: ['quickfix', 'source.fixAll']},
+      codeActionProvider: {codeActionKinds: ['quickfix']},
     },
   }
 }

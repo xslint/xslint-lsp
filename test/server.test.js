@@ -224,8 +224,8 @@ test('reports, updates, and clears diagnostics over a document lifecycle',
     await client.close()
     assert.deepEqual(
       [
-        first.some((one) => one.code === 'starts-with-double-slash'),
-        second.some((one) => one.code === 'starts-with-double-slash'),
+        first.some((one) => one.code === 'incorrect-use-of-boolean-constants'),
+        second.some((one) => one.code === 'incorrect-use-of-boolean-constants'),
         third.length,
       ],
       [true, false, 0],
@@ -253,18 +253,18 @@ test('answers a code-action request, and offers none for an unknown document',
       context: {diagnostics: []}})
     await client.close()
     assert.deepEqual(
-      [some.some((one) => one.kind === 'source.fixAll'), none],
+      [some.some((one) => one.kind === 'quickfix'), none],
       [true, []],
     )
   })
 
-test('keeps a template that a sibling stylesheet calls out of the report',
+test('keeps a function that a sibling stylesheet calls out of the report',
   async function() {
     const root = workspace(['library.xsl', 'caller.xsl'])
     const found = await published(root, 'library.xsl', folder(root))
     assert.ok(
-      !found.some((one) => one.code === 'unused-named-template'),
-      'a template called from another stylesheet cannot be reported as unused',
+      !found.some((one) => one.code === 'unused-function'),
+      'a function called from another stylesheet cannot be reported as unused',
     )
   })
 
@@ -273,7 +273,7 @@ test('publishes no defect that belongs to another stylesheet',
     const root = workspace(['library.xsl', 'caller.xsl'])
     const found = await published(root, 'library.xsl', folder(root))
     assert.ok(
-      !found.some((one) => one.code === 'starts-with-double-slash'),
+      !found.some((one) => one.code === 'incorrect-use-of-boolean-constants'),
       'a defect of a corpus stylesheet cannot be published for the open one',
     )
   })
@@ -285,7 +285,7 @@ test('reads the workspace a client announces as a single root',
       root, 'library.xsl', {rootUri: pathToFileURL(root).href},
     )
     assert.ok(
-      !found.some((one) => one.code === 'unused-named-template'),
+      !found.some((one) => one.code === 'unused-function'),
       'a client naming one root cannot be left without a corpus',
     )
   })
@@ -315,7 +315,7 @@ test('takes a saved stylesheet into the corpus and re-checks the open ones',
     const found = await client.showing(library)
     await client.close()
     assert.ok(
-      !found.some((one) => one.code === 'unused-named-template'),
+      !found.some((one) => one.code === 'unused-function'),
       'a call written and saved next door cannot leave the squiggle standing',
     )
   })
@@ -347,7 +347,7 @@ test('takes no stylesheet of another project into the corpus',
     const found = await shown
     await client.close()
     assert.ok(
-      found.some((one) => one.code === 'unused-named-template'),
-      'a stylesheet outside the workspace cannot vouch for a template in it',
+      found.some((one) => one.code === 'unused-function'),
+      'a stylesheet outside the workspace cannot vouch for a function in it',
     )
   })

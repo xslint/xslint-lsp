@@ -6,6 +6,12 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Show what the command line shows. With xslint 0.4.0 the editor runs its
+  `recommended` preset, the same checks a bare `xslint` runs, so the
+  diagnostics and the quick-fixes now match the command line. The *fix all*
+  action is gone with it, since no recommended check has a safe fix; #58 lets a
+  workspace ask for more through `.xslint.yml`, and brings it back.
+
 ## 0.0.11 - 2026-09-27
 
 - Bump `@maxonfjvipon/xslint` to 0.3.0.

@@ -47,32 +47,18 @@ test('offers a quick-fix for a fixable defect in range', function() {
   assert.ok(
     actions(document('fixable.xsl'), WHOLE, []).some(
       (action) => action.kind === 'quickfix' &&
-        action.title.includes('redundant-namespace-declarations'),
+        action.title.includes('incorrect-use-of-boolean-constants'),
     ),
   )
 })
 
-test('offers a fix-all action when there are auto-fixes', function() {
+test('the quick-fix edit writes the boolean the string stood for', function() {
+  const fix = actions(document('fixable.xsl'), WHOLE, []).find(
+    (action) => action.kind === 'quickfix',
+  )
   assert.ok(
-    actions(document('fixable.xsl'), WHOLE, []).some(
-      (action) => action.kind === 'source.fixAll',
-    ),
-  )
-})
-
-test('the fix-all edit removes every auto-fixable defect', function() {
-  const all = actions(document('fixable.xsl'), WHOLE, []).find(
-    (action) => action.kind === 'source.fixAll',
-  )
-  const text = all.edit.changes['file:///t.xsl'][0].newText
-  assert.ok(!text.includes('xmlns:unused') && !text.includes('child::'))
-})
-
-test('offers no fix-all when nothing is auto-fixable', function() {
-  assert.ok(
-    !actions(document('violations.xsl'), WHOLE, []).some(
-      (action) => action.kind === 'source.fixAll',
-    ),
+    fix.edit.changes['file:///t.xsl'][0].newText.includes('test="true()"'),
+    'a quick-fix cannot leave the string test in place',
   )
 })
 
@@ -97,7 +83,7 @@ test('skips a fixable defect above the requested range', function() {
 test('offers no quick-fix for a defect of another stylesheet', function() {
   assert.ok(
     !actions(document('library.xsl'), WHOLE, corpus('caller.xsl')).some(
-      (action) => action.title.includes('starts-with-double-slash'),
+      (action) => action.title.includes('incorrect-use-of-boolean-constants'),
     ),
     'a fix belonging to a corpus stylesheet cannot be offered on the open one',
   )

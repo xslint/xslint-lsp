@@ -42,12 +42,12 @@ const rewrite = function(uri, range, title, kind, content, resolves) {
 
 /**
  * Code actions for a document: a quick-fix for every fixable defect whose line
- * falls within the requested range, and a fix-all action for the safe fixes.
- * Each is computed by xslint's own `fixed`, so an editor fix is identical to a
- * command-line `--fix`; individual quick-fixes include the opinionated
- * suggestions, while fix-all stays to the safe ones. The corpus rides along so
- * that a fix is offered beside the same defects the diagnostics report, rather
- * than beside the ones a document linted on its own invents.
+ * falls within the requested range, computed by xslint's own `fixed`, so an
+ * editor fix is what `--fix-suggestions` writes. The corpus rides along so a
+ * fix is offered beside the defects the diagnostics report.
+ * @todo #58:30min Offer a fix-all action for the safe fixes again once the
+ *  server reads `.xslint.yml`, since only a preset past `recommended` has
+ *  one.
  * @param {TextDocument} document - The document to act on
  * @param {{start: object, end: object}} range - The requested range
  * @param {Array.<{file: string, content: string}>} corpus - The workspace's
@@ -69,13 +69,6 @@ const actions = function(document, range, corpus) {
         diagnostics([defect]),
       ))
     }
-  }
-  const every = fixed(all, defects, false).contents.get(own)
-  if (every !== undefined) {
-    found.push(rewrite(
-      document.uri, span, 'xslint: fix all auto-fixable problems',
-      'source.fixAll', every, [],
-    ))
   }
   return found
 }
