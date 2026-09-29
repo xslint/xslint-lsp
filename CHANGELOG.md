@@ -6,10 +6,11 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
-- Keep showing every check in xslint's catalog. xslint 0.4.0 runs only its
-  `recommended` preset when `lint` is given none, so the editor would have
-  stopped showing nearly every style diagnostic and every fix that goes with
-  one. The diagnostics and the code actions now ask for `preset: 'all'`.
+- Show what the command line shows. With xslint 0.4.0 the editor runs its
+  `recommended` preset, the same checks a bare `xslint` runs, so the
+  diagnostics and the quick-fixes now match the command line. The *fix all*
+  action is gone with it, since no recommended check has a safe fix; #58 lets a
+  workspace ask for more through `.xslint.yml`, and brings it back.
 
 ## 0.0.11 - 2026-09-27
 

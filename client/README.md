@@ -51,11 +51,12 @@ no save or build needed.
 
 ## Features
 
-- **Live diagnostics** — every xslint check runs over the buffer as you edit,
+- **Live diagnostics** — xslint's `recommended` checks, the ones the
+  command line runs by default, go over the buffer as you edit,
   surfacing problems with their exact line and column, no save or build needed.
-- **Quick-fixes** — a lightbulb on each fixable defect, plus a *fix all* action
-  for the safe fixes. The edits come from xslint's own engine, so a fix in the
-  editor is identical to a command-line `xslint --fix`.
+- **Quick-fixes** — a lightbulb on each fixable defect. The edits come from
+  xslint's own engine, so a fix in the editor is what a command-line
+  `xslint --fix-suggestions` writes.
 - **Any `.xsl`/`.xslt` file** — activates automatically.
 
 ## How it works

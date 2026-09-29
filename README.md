@@ -60,9 +60,9 @@ until the server restarts, and neither is a folder added to the workspace after
 startup — the walk skips dot-directories, `node_modules` and `target`, and does
 not follow symbolic links.
 
-It also offers **code actions**: a quick-fix on each fixable defect and a
-*fix all* action for the safe fixes. Both are computed by xslint's own `fixed`
-engine, so an editor fix is byte-for-byte identical to a command-line `--fix`.
+It also offers **code actions**: a quick-fix on each fixable defect, computed
+by xslint's own `fixed` engine, so an editor fix is byte-for-byte what a
+command-line `--fix-suggestions` writes.
 
 ## Run it
 
