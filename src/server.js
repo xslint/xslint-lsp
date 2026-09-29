@@ -68,7 +68,7 @@ const check = function(document) {
   connection.sendDiagnostics({
     uri: document.uri,
     diagnostics: diagnostics(
-      lint(sources(corpus, document)).filter((one) => one.file === own),
+      lint(sources(corpus, document), {preset: 'all'}).filter((one) => one.file === own),
     ),
   })
 }

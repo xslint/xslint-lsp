@@ -6,6 +6,11 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Keep showing every check in xslint's catalog. xslint 0.4.0 runs only its
+  `recommended` preset when `lint` is given none, so the editor would have
+  stopped showing nearly every style diagnostic and every fix that goes with
+  one. The diagnostics and the code actions now ask for `preset: 'all'`.
+
 ## 0.0.11 - 2026-09-27
 
 - Bump `@maxonfjvipon/xslint` to 0.3.0.

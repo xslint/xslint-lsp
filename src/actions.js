@@ -57,7 +57,7 @@ const rewrite = function(uri, range, title, kind, content, resolves) {
 const actions = function(document, range, corpus) {
   const own = file(document.uri)
   const all = sources(corpus, document)
-  const defects = lint(all).filter((defect) => defect.file === own)
+  const defects = lint(all, {preset: 'all'}).filter((defect) => defect.file === own)
   const span = whole(document)
   const found = []
   for (const defect of defects) {
