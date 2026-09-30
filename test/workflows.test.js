@@ -93,11 +93,16 @@ const escaped = function(text) {
  * The seconds a probe may spend at worst, every call timing out.
  * @param {string} text - The step holding the probe
  * @return {number} - Seconds
+ * @throws {Error} - When the step sleeps in more than one place
  */
 const worst = function(text) {
+  const sleeps = text.match(/^ +sleep \d+$/gm) ?? []
+  if (sleeps.length !== 1) {
+    throw new Error(`a probe must sleep in exactly one place, this one sleeps in ${sleeps.length}`)
+  }
   const attempts = Number(text.match(/seq 1 (\d+)\)/)[1])
   return attempts * Number(text.match(/timeout (\d+) npm pack /)[1]) +
-    (attempts - 1) * Number(text.match(/^ +sleep (\d+)$/m)[1])
+    (attempts - 1) * Number(sleeps[0].trim().split(' ')[1])
 }
 
 PROBES.forEach(([name, step, pkg, variable]) => {
@@ -195,5 +200,20 @@ test('the extension waits past the longest propagation npm has shown', function(
       Number(script('release.yml', 'Wait for the released server').match(/^ +sleep (\d+)$/m)[1]) >=
       25 * 60,
     'npm served xslint-lsp@0.0.15 installably only 25 minutes after its publish',
+  )
+})
+
+test('the extension waits for the server before it installs it', function() {
+  assert.deepStrictEqual(
+    ['Wait for the released server', 'Build the extension'].map(
+      (step) => workflow('release.yml').split(/^ +- name: /m).findIndex(
+        (block) => block.startsWith(step),
+      ),
+    ).map(
+      (index, position, all) =>
+        index > 0 && (position === 0 || all[position - 1] < index),
+    ),
+    [true, true],
+    'a wait standing behind the install lets the install roll the race alone',
   )
 })
