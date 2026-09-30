@@ -84,27 +84,19 @@ const inside = function(dir, pth) {
 
 /**
  * The directory `xslint` is run in, with no path, to read the project a
- * stylesheet belongs to: the one holding the `.xslint.yml` the settings come
- * from, where that file sits inside any workspace folder holding the
- * stylesheet, or else the deepest such folder. A configuration above the
- * workspace — one in a home directory — decides the rules but not what is
- * read, or a keystroke would walk the whole home. A stylesheet outside every
- * folder has no project, and is read alone, as `xslint` naming that file
- * reads it.
+ * stylesheet belongs to: the deepest workspace folder holding it, as the
+ * command line run in that folder, or xslint-action run at the workspace
+ * root, reads one `.xslint.yml` for every file under it, a nested one
+ * included. A stylesheet outside every folder has no project, and is read
+ * alone, as `xslint` naming that file reads it.
  * @param {Array.<string>} folders - The workspace's root directories
- * @param {object} settings - What xslint's `settingsOf` answers
  * @param {string} own - The stylesheet's path
  * @return {Array.<string>} - The directory, or none
  */
-const rooted = function(folders, settings, own) {
-  const holding = folders.filter((dir) => inside(dir, own))
-  let found = [...holding].sort((one, two) => two.length - one.length)
+const rooted = function(folders, own) {
+  return folders.filter((dir) => inside(dir, own))
+    .sort((one, two) => two.length - one.length)
     .slice(0, 1)
-  if (settings.file &&
-    holding.some((dir) => inside(dir, path.dirname(settings.file)))) {
-    found = [path.dirname(settings.file)]
-  }
-  return found
 }
 
 /**

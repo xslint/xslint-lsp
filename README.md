@@ -43,9 +43,8 @@ closes. Each xslint defect `{name, severity, message, line, pos}` becomes an LSP
 diagnostic whose `code` is the rule name and whose `source` is `xslint`.
 
 A document is linted **among the other stylesheets of its project**, exactly
-the ones `xslint` run with no path argument in the project's directory reads:
-the directory of the `.xslint.yml` that applies, when that file sits inside the
-workspace folder holding the document, or else that folder. The server does not
+the ones `xslint` run with no path argument in the workspace folder holding it
+reads, the deepest one where folders nest. The server does not
 walk the tree itself; it asks xslint's own `stylesheetsOf`, so `.xsl` and
 `.xslt` are both read, what a `.gitignore` names (unless git tracks it) and
 what `exclude:` covers are passed by, and nothing else is skipped. Each
@@ -76,15 +75,20 @@ clears the complaint on the stylesheet that declares it. A stylesheet changed
 **outside** the editor re-checks nothing until the next edit, and a folder
 added to the workspace after startup is not a root until the server restarts.
 
-The editor honors **`.xslint.yml` exactly like the command line**. Each
-document is linted under the configuration `xslint` would read if run from the
-document's directory — the nearest `.xslint.yml` there or above it, which in a
-project with one configuration at its root is the one a bare `xslint` in that
-root reads — through xslint's own `settingsOf`, so `preset:`, `only:`, `rules:`
-(`off` and re-grades) and `exclude:` mean the same in both, and the file the
-problems land on is the one xslint says it read. A stylesheet outside a nested
-project keeps none of its declarations alive, since `xslint` run in that
-project never reads it. A stylesheet the configuration excludes shows no
+The editor honors **`.xslint.yml` exactly like the command line**, and behaves
+like `xslint` run in the workspace folder: **one `.xslint.yml` per run**. Every
+document of a folder is linted under the configuration a bare `xslint` in that
+folder reads, the first `.xslint.yml` found walking up from the folder, through
+xslint's own `settingsOf`, so `preset:`, `only:`, `rules:` (`off` and
+re-grades) and `exclude:` mean the same in both, and the file the problems land
+on is the one xslint says it read. A configuration above the folder sets the
+rules, and the walk still stays inside the folder. A `.xslint.yml` in a
+directory below the folder is not read at all, exactly as the command line and
+xslint-action run at the root never read it, so nothing is published on it
+either; a nested configuration applies only when its directory is opened as a
+workspace folder of its own. A document outside every folder is linted under
+the configuration found walking up from its own directory. A stylesheet the
+configuration excludes shows no
 diagnostics and, as on the command line, keeps no declaration of another
 stylesheet alive. The problems xslint warns about in the file — an unknown key,
 a severity it does not know, a rule naming no check, an exclusion that excluded
@@ -150,11 +154,13 @@ open/change/close, asserting the diagnostics it publishes — and it exits the
 server cleanly so its subprocess coverage is captured. It also holds the parity
 test: over the committed project in `test/fixtures/project`, whose
 `.xslint.yml` sets a preset, turns a check off, re-grades another and excludes
-a directory, over a workspace holding a nested project of its own, over a
-project whose root stylesheet is called only from a nested one, and over
+a directory, over workspaces holding a nested `.xslint.yml` that the root run
+never reads, among them `test/fixtures/split`, whose nested file asks for the
+recommended preset under a root one asking for every check, and over
 `test/fixtures/discovery`, which holds an `.xslt`, a gitignored stylesheet and
 an import of a missing file, the server must publish for every stylesheet
-exactly what the `xslint` command line run in that project reports for it.
+exactly what the `xslint` command line run at the workspace root reports for
+it.
 
 ## License
 
