@@ -251,6 +251,36 @@ const nested = function() {
 }
 
 /**
+ * A copy of the committed project whose stylesheets only xslint's own walk
+ * reads right: a function called from an `.xslt` alone, another called from a
+ * stylesheet its `.gitignore` names alone, and an import of a missing file.
+ * @return {string} - The project directory
+ */
+const discovery = function() {
+  const root = scratch()
+  fs.cpSync(path.resolve(__dirname, 'fixtures', 'discovery'), root,
+    {recursive: true})
+  fs.writeFileSync(path.join(root, '.gitignore'), fixture('ignored.txt'))
+  return root
+}
+
+/**
+ * A project under a `.xslint.yml` running every check, whose function is
+ * called only from `sub`, a project of its own under another such file —
+ * which the command line run at the root reads all the same.
+ * @return {string} - The project directory
+ */
+const stacked = function() {
+  const root = scratch()
+  fs.mkdirSync(path.join(root, 'sub'))
+  fs.writeFileSync(path.join(root, 'library.xsl'), fixture('library.xsl'))
+  fs.writeFileSync(path.join(root, 'sub', 'caller.xsl'), fixture('caller.xsl'))
+  fs.writeFileSync(path.join(root, '.xslint.yml'), fixture('all.yml'))
+  fs.writeFileSync(path.join(root, 'sub', '.xslint.yml'), fixture('all.yml'))
+  return root
+}
+
+/**
  * A workspace holding the named stylesheets and, as its `.xslint.yml`, the
  * named configuration fixture.
  * @param {Array.<string>} names - Stylesheet fixture names
@@ -475,6 +505,12 @@ for (const row of [
   {layout: project, dir: '', name: 'main.xsl'},
   {layout: project, dir: '', name: path.join('vendor', 'reader.xsl')},
   {layout: nested, dir: 'sub', name: 'shelf.xsl'},
+  {layout: stacked, dir: '', name: 'library.xsl'},
+  {layout: discovery, dir: '', name: 'shelf.xsl'},
+  {layout: discovery, dir: '', name: 'reader.xslt'},
+  {layout: discovery, dir: '', name: 'ledger.xsl'},
+  {layout: discovery, dir: '', name: 'generated.xsl'},
+  {layout: discovery, dir: '', name: 'index.xsl'},
 ]) {
   test(`publishes for ${path.join(row.dir, row.name)} of a ${row.layout.name} workspace what the command line reports for it`,
     {timeout: 20000}, async function() {
@@ -493,6 +529,17 @@ test('publishes a problem of the configuration on the configuration',
       (await problems(configured(['violations.xsl'], 'unknown.yml'),
         'violations.xsl')).some((one) => one.message.includes('presets')),
       'a key the command line warns about cannot go unmentioned',
+    )
+  })
+
+test('publishes a warning of the walk on the configuration',
+  {timeout: 20000}, async function() {
+    assert.ok(
+      (await problems(
+        configured(['violations.xsl'], path.join('project', '.xslint.yml')),
+        'violations.xsl',
+      )).some((one) => one.message.includes('excluded nothing')),
+      'an exclusion the command line warns excluded nothing cannot go unmentioned',
     )
   })
 

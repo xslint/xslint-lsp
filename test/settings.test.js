@@ -66,3 +66,20 @@ test('names a configuration no parser reads as an error', function() {
     'a configuration the command line refuses cannot be graded a warning',
   )
 })
+
+test('finds a refused configuration nearest a directory below it', function() {
+  const root = project('broken.txt')
+  assert.deepEqual(
+    settled(path.join(root, 'deep', 'er')).configs,
+    [path.join(root, '.xslint.yml')],
+    'a configuration no parser reads cannot lose the file its error belongs on',
+  )
+})
+
+test('names no configuration where the search found none', function() {
+  assert.deepEqual(
+    settled(fs.mkdtempSync(path.join(os.tmpdir(), 'xslint-lsp-'))).configs,
+    [],
+    'a project without a configuration cannot be given one',
+  )
+})
