@@ -6,6 +6,8 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+## 0.0.16 - 2026-09-30
+
 - Read one `.xslint.yml` per run, the way `xslint` run in the workspace folder
   and xslint-action read it (#70). Every document of a folder is linted under
   the configuration found walking up from that folder, over that folder's
