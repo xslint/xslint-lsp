@@ -19,16 +19,18 @@ server, so the same defects light up in any LSP-capable editor: VS Code,
 Neovim, and JetBrains IDEs (via [LSP4IJ](https://github.com/redhat-developer/lsp4ij)
 or their built-in LSP support).
 
-Because it is a thin transport over xslint — it calls xslint's `lint(sources)`
-in-process and maps each defect onto an LSP `Diagnostic` — there is no second
-rule engine to keep in sync.
+Because it is a thin transport over xslint — it calls xslint's `lint(sources,
+settings)` in-process and maps each defect onto an LSP `Diagnostic` — there is
+no second rule engine to keep in sync, and no second reading of the project's
+`.xslint.yml` either.
 
 ## How it works
 
 ```text
 editor  ──(LSP over stdio)──▶  src/server.js
+                                  │  settingsOf(dir)    → @xslint/xslint
                                   │  sources(corpus, buffer) → src/corpus.js
-                                  │  lint(sources)      → @xslint/xslint
+                                  │  lint(sources, settings) → @xslint/xslint
                                   │  diagnostics(defects)  → src/diagnostics.js
                                   ▼
 editor  ◀──(publishDiagnostics)──  { range, severity, code: rule, message }
@@ -60,9 +62,28 @@ until the server restarts, and neither is a folder added to the workspace after
 startup — the walk skips dot-directories, `node_modules` and `target`, and does
 not follow symbolic links.
 
-It also offers **code actions**: a quick-fix on each fixable defect, computed
-by xslint's own `fixed` engine, so an editor fix is byte-for-byte what a
-command-line `--fix-suggestions` writes.
+The editor honors **`.xslint.yml` exactly like the command line**. Each
+document is linted under the configuration `xslint` would read if run from the
+document's directory — the nearest `.xslint.yml` there or above it, which in a
+project with one configuration at its root is the one a bare `xslint` in that
+root reads — through xslint's own `settingsOf`, so `preset:`, `only:`, `rules:`
+(`off` and re-grades) and `exclude:` mean the same in both. A stylesheet the
+configuration excludes shows no diagnostics and, as on the command line, keeps
+no declaration of another stylesheet alive. The problems xslint warns about in
+the file — an unknown key, a severity it does not know, a rule naming no check —
+appear as warnings on the `.xslint.yml` itself. A file no YAML parser reads, or
+one naming a preset that does not exist, fails the command line before it
+lints, so it shows as an error on the `.xslint.yml` and the editor lints nothing
+under it rather than guessing at what it meant. The configuration is read
+afresh on every check, and a client that lets the server register file watchers
+is asked to report changes to any `.xslint.yml`, whereupon every open document
+is checked again.
+
+It also offers **code actions**: a quick-fix on each fixable defect and a
+*fix all* action for the safe fixes. Both are computed by xslint's own `fixed`
+engine over the defects the diagnostics show, so a quick-fix is byte-for-byte
+what a command-line `--fix-suggestions` writes and *fix all* what `--fix`
+writes.
 
 ## Run it
 
@@ -104,9 +125,15 @@ npm run lint    # eslint (google + @stylistic)
 
 Tests run on Node's built-in runner (`node --test`). `test/diagnostics.test.js`
 covers the defect→diagnostic mapping; `test/corpus.test.js` covers the
-workspace walk and the buffer swap; `test/server.test.js` spawns the server
-and drives it through open/change/close, asserting the diagnostics it publishes
-— and it exits the server cleanly so its subprocess coverage is captured.
+workspace walk and the buffer swap; `test/settings.test.js` and
+`test/verdict.test.js` cover how `.xslint.yml` is read and applied;
+`test/server.test.js` spawns the server and drives it through
+open/change/close, asserting the diagnostics it publishes — and it exits the
+server cleanly so its subprocess coverage is captured. It also holds the parity
+test: over the committed project in `test/fixtures/project`, whose
+`.xslint.yml` sets a preset, turns a check off, re-grades another and excludes
+a directory, the server must publish for every stylesheet exactly what the
+`xslint` command line run in that project reports for it.
 
 ## License
 

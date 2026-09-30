@@ -9,7 +9,8 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const {pathToFileURL} = require('node:url')
-const {spawn} = require('node:child_process')
+const {spawn, spawnSync} = require('node:child_process')
+const {diagnostics} = require('../src/diagnostics')
 
 /**
  * A minimal LSP client over stdio: it spawns the server, frames JSON-RPC
@@ -29,6 +30,7 @@ class Client {
     this.awaited = new Map()
     this.latest = new Map()
     this.responses = new Map()
+    this.asked = new Map()
     this.nextId = 1000
     this.server.stdout.on('data', (chunk) => this.consume(chunk))
   }
@@ -78,6 +80,10 @@ class Client {
         const resolve = this.responses.get(message.id)
         this.responses.delete(message.id)
         resolve(message.result)
+      } else if (Object.hasOwn(message, 'id') && this.asked.has(message.method)) {
+        this.asked.get(message.method)(message.params)
+        this.asked.delete(message.method)
+        this.send({id: message.id, result: null})
       }
       boundary = this.buffer.indexOf('\r\n\r\n')
     }
@@ -116,6 +122,16 @@ class Client {
       new Promise((resolve) => setTimeout(resolve, 3000).unref()),
     ])
     return this.latest.get(uri)
+  }
+
+  /**
+   * A promise for the params of the next request the server makes of the
+   * client with a method, which the client answers with an empty result.
+   * @param {string} method - The request method
+   * @return {Promise.<object>} - The request's params
+   */
+  requested(method) {
+    return new Promise((resolve) => this.asked.set(method, resolve))
   }
 
   /**
@@ -182,11 +198,87 @@ const published = async function(root, name, announced) {
   client.send({id: 1, method: 'initialize', params: {
     processId: process.pid, capabilities: {}, ...announced}})
   client.send({method: 'initialized', params: {}})
-  const opened = client.diagnostics()
+  const uri = pathToFileURL(path.join(root, name)).href
+  const opened = client.about(uri)
   client.send({method: 'textDocument/didOpen', params: {textDocument: {
-    uri: pathToFileURL(path.join(root, name)).href,
-    languageId: 'xsl', version: 1, text: fixture(name)}}})
+    uri: uri, languageId: 'xsl', version: 1,
+    text: fs.readFileSync(path.join(root, name), 'utf-8')}}})
   const found = await opened
+  await client.close()
+  return found
+}
+
+/**
+ * A copy of the committed project in a fresh temporary directory: stylesheets
+ * under the `.xslint.yml` that runs every check, turns one off, re-grades
+ * another, and excludes a directory. The path is the real one, so the command
+ * line, which resolves its own, names the same files the server does.
+ * @return {string} - The project directory
+ */
+const project = function() {
+  const root = fs.realpathSync(
+    fs.mkdtempSync(path.join(os.tmpdir(), 'xslint-lsp-')),
+  )
+  fs.cpSync(path.resolve(__dirname, 'fixtures', 'project'), root,
+    {recursive: true})
+  return root
+}
+
+/**
+ * A workspace holding the named stylesheets and, as its `.xslint.yml`, the
+ * named configuration fixture.
+ * @param {Array.<string>} names - Stylesheet fixture names
+ * @param {string} config - Configuration fixture name
+ * @return {string} - The workspace directory
+ */
+const configured = function(names, config) {
+  const root = workspace(names)
+  fs.writeFileSync(path.join(root, '.xslint.yml'), fixture(config))
+  return root
+}
+
+/**
+ * What the `xslint` command line, run in a project's directory the way a user
+ * runs it, reports for one of its stylesheets, as the diagnostics an editor
+ * would show for them.
+ * @param {string} root - The project directory
+ * @param {string} name - The stylesheet, relative to the root
+ * @return {Array.<object>} - The diagnostics
+ */
+const reported = function(root, name) {
+  const pkg = require.resolve('@maxonfjvipon/xslint/package.json')
+  const run = spawnSync(
+    process.execPath,
+    [path.join(path.dirname(pkg), require(pkg).bin.xslint), '--format=json'],
+    {cwd: root, encoding: 'utf-8', timeout: 30000},
+  )
+  return diagnostics(
+    JSON.parse(run.stdout)
+      .filter((one) => path.resolve(root, one.file) === path.join(root, name))
+      .map((one) => ({
+        name: one.rule, severity: one.severity, message: one.message,
+        line: one.line, pos: one.column,
+      })),
+  )
+}
+
+/**
+ * Open a stylesheet of a workspace and return the diagnostics the server
+ * publishes about its `.xslint.yml`.
+ * @param {string} root - The workspace directory
+ * @param {string} name - The stylesheet to open, relative to the root
+ * @return {Promise.<Array.<object>>} - The configuration's diagnostics
+ */
+const problems = async function(root, name) {
+  const client = new Client()
+  client.send({id: 1, method: 'initialize', params: {
+    processId: process.pid, capabilities: {}, ...folder(root)}})
+  client.send({method: 'initialized', params: {}})
+  const shown = client.about(pathToFileURL(path.join(root, '.xslint.yml')).href)
+  client.send({method: 'textDocument/didOpen', params: {textDocument: {
+    uri: pathToFileURL(path.join(root, name)).href, languageId: 'xsl',
+    version: 1, text: fixture(name)}}})
+  const found = await shown
   await client.close()
   return found
 }
@@ -349,5 +441,112 @@ test('takes no stylesheet of another project into the corpus',
     assert.ok(
       found.some((one) => one.code === 'unused-function'),
       'a stylesheet outside the workspace cannot vouch for a function in it',
+    )
+  })
+
+for (const name of ['shelf.xsl', 'main.xsl', path.join('vendor', 'reader.xsl')]) {
+  test(`publishes for ${name} what the command line reports for it`,
+    {timeout: 20000}, async function() {
+      const root = project()
+      assert.deepEqual(
+        await published(root, name, folder(root)),
+        reported(root, name),
+        'the editor cannot show what the command line does not report',
+      )
+    })
+}
+
+test('publishes a problem of the configuration on the configuration',
+  {timeout: 20000}, async function() {
+    assert.ok(
+      (await problems(configured(['violations.xsl'], 'unknown.yml'),
+        'violations.xsl')).some((one) => one.message.includes('presets')),
+      'a key the command line warns about cannot go unmentioned',
+    )
+  })
+
+test('publishes a configuration no parser reads as an error on it',
+  {timeout: 20000}, async function() {
+    assert.deepEqual(
+      (await problems(configured(['violations.xsl'], 'broken.txt'),
+        'violations.xsl')).map((one) => one.severity),
+      [1],
+      'a configuration the command line refuses cannot pass unremarked',
+    )
+  })
+
+test('lints nothing under a configuration no parser reads', {timeout: 20000}, async function() {
+  const root = configured(['violations.xsl'], 'broken.txt')
+  assert.deepEqual(
+    await published(root, 'violations.xsl', folder(root)),
+    [],
+    'a stylesheet cannot be judged by a configuration nobody could read',
+  )
+})
+
+test('relints the open stylesheets once the configuration changes',
+  {timeout: 20000}, async function() {
+    const root = workspace(['violations.xsl'])
+    const uri = pathToFileURL(path.join(root, 'violations.xsl')).href
+    const client = new Client()
+    client.send({id: 1, method: 'initialize',
+      params: {processId: process.pid, capabilities: {}, ...folder(root)}})
+    client.send({method: 'initialized', params: {}})
+    const opened = client.about(uri)
+    client.send({method: 'textDocument/didOpen', params: {textDocument: {
+      uri: uri, languageId: 'xsl', version: 1,
+      text: fixture('violations.xsl')}}})
+    await opened
+    fs.writeFileSync(path.join(root, '.xslint.yml'), fixture('silent.yml'))
+    client.send({method: 'workspace/didChangeWatchedFiles', params: {changes: [{
+      uri: pathToFileURL(path.join(root, '.xslint.yml')).href, type: 1}]}})
+    const found = await client.showing(uri)
+    await client.close()
+    assert.ok(
+      !found.some((one) => one.code === 'incorrect-use-of-boolean-constants'),
+      'a check the configuration turned off cannot keep its squiggle',
+    )
+  })
+
+test('clears the problems of a configuration once it is deleted',
+  {timeout: 20000}, async function() {
+    const root = configured(['violations.xsl'], 'unknown.yml')
+    const config = pathToFileURL(path.join(root, '.xslint.yml')).href
+    const client = new Client()
+    client.send({id: 1, method: 'initialize',
+      params: {processId: process.pid, capabilities: {}, ...folder(root)}})
+    client.send({method: 'initialized', params: {}})
+    const opened = client.about(config)
+    client.send({method: 'textDocument/didOpen', params: {textDocument: {
+      uri: pathToFileURL(path.join(root, 'violations.xsl')).href,
+      languageId: 'xsl', version: 1, text: fixture('violations.xsl')}}})
+    await opened
+    fs.rmSync(path.join(root, '.xslint.yml'))
+    client.send({method: 'workspace/didChangeWatchedFiles', params: {changes: [{
+      uri: config, type: 3}]}})
+    const found = await client.showing(config)
+    await client.close()
+    assert.deepEqual(
+      found, [], 'a deleted configuration cannot keep its problems standing',
+    )
+  })
+
+test('asks a client that registers watchers to watch every configuration',
+  {timeout: 20000}, async function() {
+    const client = new Client()
+    const asked = client.requested('client/registerCapability')
+    client.send({id: 1, method: 'initialize', params: {
+      processId: process.pid, rootUri: null,
+      capabilities: {workspace: {didChangeWatchedFiles: {
+        dynamicRegistration: true}}}}})
+    client.send({method: 'initialized', params: {}})
+    const params = await asked
+    await client.close()
+    assert.deepEqual(
+      params.registrations.flatMap(
+        (one) => one.registerOptions.watchers.map((it) => it.globPattern),
+      ),
+      ['**/.xslint.yml'],
+      'an edit to a configuration cannot go unnoticed by the server',
     )
   })

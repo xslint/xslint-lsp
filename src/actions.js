@@ -3,9 +3,10 @@
  * SPDX-License-Identifier: MIT
  */
 
-const {lint, fixed} = require('@maxonfjvipon/xslint')
+const {fixed} = require('@maxonfjvipon/xslint')
 const {diagnostics} = require('./diagnostics')
 const {file, sources} = require('./corpus')
+const {verdict} = require('./verdict')
 
 /**
  * The range that spans a whole document, so an edit can rewrite it entirely.
@@ -42,22 +43,23 @@ const rewrite = function(uri, range, title, kind, content, resolves) {
 
 /**
  * Code actions for a document: a quick-fix for every fixable defect whose line
- * falls within the requested range, computed by xslint's own `fixed`, so an
- * editor fix is what `--fix-suggestions` writes. The corpus rides along so a
- * fix is offered beside the defects the diagnostics report.
- * @todo #58:30min Offer a fix-all action for the safe fixes again once the
- *  server reads `.xslint.yml`, since only a preset past `recommended` has
- *  one.
+ * falls within the requested range, and a fix-all action for the safe fixes.
+ * Each is computed by xslint's own `fixed`, so a quick-fix is what
+ * `--fix-suggestions` writes and the fix-all what `--fix` writes. The corpus
+ * and the settings ride along so a fix is offered beside exactly the defects
+ * the diagnostics report.
  * @param {TextDocument} document - The document to act on
  * @param {{start: object, end: object}} range - The requested range
  * @param {Array.<{file: string, content: string}>} corpus - The workspace's
  *  other stylesheets, which the cross-file checks are judged against
+ * @param {object} settings - What xslint's `settingsOf` answers for the
+ *  document's project
  * @return {Array.<object>} - The code actions
  */
-const actions = function(document, range, corpus) {
+const actions = function(document, range, corpus, settings) {
   const own = file(document.uri)
   const all = sources(corpus, document)
-  const defects = lint(all).filter((defect) => defect.file === own)
+  const defects = verdict(document, corpus, settings)
   const span = whole(document)
   const found = []
   for (const defect of defects) {
@@ -69,6 +71,13 @@ const actions = function(document, range, corpus) {
         diagnostics([defect]),
       ))
     }
+  }
+  const every = fixed(all, defects, false).contents.get(own)
+  if (every !== undefined) {
+    found.push(rewrite(
+      document.uri, span, 'xslint: fix all auto-fixable problems',
+      'source.fixAll', every, [],
+    ))
   }
   return found
 }

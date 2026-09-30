@@ -51,12 +51,17 @@ no save or build needed.
 
 ## Features
 
-- **Live diagnostics** — xslint's `recommended` checks, the ones the
-  command line runs by default, go over the buffer as you edit,
+- **Live diagnostics** — the checks your project's `.xslint.yml` runs, or
+  xslint's `recommended` ones without it, go over the buffer as you edit,
   surfacing problems with their exact line and column, no save or build needed.
-- **Quick-fixes** — a lightbulb on each fixable defect. The edits come from
-  xslint's own engine, so a fix in the editor is what a command-line
-  `xslint --fix-suggestions` writes.
+- **Your configuration** — `preset:`, `only:`, `rules:` and `exclude:` in
+  `.xslint.yml` mean in the editor exactly what they mean to the command line,
+  a problem with the file shows up on the file itself, and an edit to it
+  re-checks what you have open.
+- **Quick-fixes** — a lightbulb on each fixable defect, plus a *fix all* action
+  for the safe fixes. The edits come from xslint's own engine, so a fix in the
+  editor is what a command-line `xslint --fix-suggestions` writes, and *fix
+  all* what `xslint --fix` writes.
 - **Any `.xsl`/`.xslt` file** — activates automatically.
 
 ## How it works
