@@ -70,3 +70,43 @@ test('the Open VSX publish waits between its attempts', function() {
     'a retry with no wait spends every attempt on the same bad second',
   )
 })
+
+test('the cascade waits on the document npm install resolves through', function() {
+  assert.doesNotMatch(
+    script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
+    /npm view "@maxonfjvipon\/xslint@/,
+    'npm view reads a packument the registry caches apart from the one npm install reads',
+  )
+})
+
+test('the cascade probe revalidates what npm has cached', function() {
+  assert.match(
+    script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
+    /npm pack --dry-run --prefer-online "@maxonfjvipon\/xslint@\$\{NEW\}"/,
+    'a probe that trusts the local cache sees a stale miss for five minutes',
+  )
+})
+
+test('the cascade probe asks for several resolutions in a row', function() {
+  assert.match(
+    script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
+    /-ge [2-9]\b/,
+    'one lucky edge of the registry cannot be allowed to stand for all of them',
+  )
+})
+
+test('the cascade fails loudly when the release never resolves', function() {
+  assert.match(
+    script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
+    /::error::[^\n]+\n +exit 1/,
+    'a probe that falls through silently blames the install for the wait',
+  )
+})
+
+test('the cascade install revalidates what npm has cached', function() {
+  assert.match(
+    script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
+    /npm install --save --prefer-online "@maxonfjvipon\/xslint@\^\$\{NEW\}"/,
+    'an install that trusts the local cache can miss the version the probe just saw',
+  )
+})
