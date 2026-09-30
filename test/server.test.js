@@ -668,6 +668,24 @@ test('clears the problems of a deleted configuration under every spelling',
     )
   })
 
+test('clears a deleted configuration nothing was ever published on',
+  {timeout: 20000}, async function() {
+    const root = workspace(['violations.xsl'])
+    const config = pathToFileURL(path.join(root, '.xslint.yml')).href
+    const client = new Client()
+    client.send({id: 1, method: 'initialize',
+      params: {processId: process.pid, capabilities: {}, ...folder(root)}})
+    client.send({method: 'initialized', params: {}})
+    const shown = client.about(config)
+    client.send({method: 'workspace/didChangeWatchedFiles', params: {changes: [{
+      uri: config, type: 3}]}})
+    const found = await shown
+    await client.close()
+    assert.deepEqual(
+      found, [], 'a deleted configuration cannot be left unanswered',
+    )
+  })
+
 test('asks a client that registers watchers to watch every configuration',
   {timeout: 20000}, async function() {
     const client = new Client()
