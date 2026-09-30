@@ -9,6 +9,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const {TextDocument} = require('vscode-languageserver-textdocument')
 const {verdict} = require('../src/verdict')
+const {settings} = require('./fixtures/settings')
 
 /**
  * A committed fixture stylesheet, as text.
@@ -26,18 +27,6 @@ const fixture = function(name) {
  */
 const document = function(name) {
   return TextDocument.create('file:///shelf.xsl', 'xsl', 1, fixture(name))
-}
-
-/**
- * What xslint's `settingsOf` answers, spelled out for one run.
- * @param {object} said - The keys that differ from a bare run
- * @return {object} - The settings
- */
-const settings = function(said) {
-  return {
-    suppress: [], overrides: {}, only: [], preset: 'recommended',
-    excluded: () => false, problems: [], ...said,
-  }
 }
 
 test('draws no defect for a stylesheet the settings exclude', function() {

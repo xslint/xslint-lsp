@@ -67,7 +67,11 @@ document is linted under the configuration `xslint` would read if run from the
 document's directory — the nearest `.xslint.yml` there or above it, which in a
 project with one configuration at its root is the one a bare `xslint` in that
 root reads — through xslint's own `settingsOf`, so `preset:`, `only:`, `rules:`
-(`off` and re-grades) and `exclude:` mean the same in both. A stylesheet the
+(`off` and re-grades) and `exclude:` mean the same in both. The cross-file
+checks read the stylesheets below that `.xslint.yml`'s directory, the ones
+`xslint` run there reads, so a stylesheet outside a nested project keeps none
+of its declarations alive; with no `.xslint.yml`, the whole workspace. A
+stylesheet the
 configuration excludes shows no diagnostics and, as on the command line, keeps
 no declaration of another stylesheet alive. The problems xslint warns about in
 the file — an unknown key, a severity it does not know, a rule naming no check —
@@ -76,8 +80,9 @@ one naming a preset that does not exist, fails the command line before it
 lints, so it shows as an error on the `.xslint.yml` and the editor lints nothing
 under it rather than guessing at what it meant. The configuration is read
 afresh on every check, and a client that lets the server register file watchers
-is asked to report changes to any `.xslint.yml`, whereupon every open document
-is checked again.
+is asked to report changes to any `.xslint.yml`, whereupon the file's problems
+are published afresh, or cleared when it is deleted, whether or not a document
+under it is open, and every open document is checked again.
 
 It also offers **code actions**: a quick-fix on each fixable defect and a
 *fix all* action for the safe fixes. Both are computed by xslint's own `fixed`
@@ -132,8 +137,9 @@ open/change/close, asserting the diagnostics it publishes — and it exits the
 server cleanly so its subprocess coverage is captured. It also holds the parity
 test: over the committed project in `test/fixtures/project`, whose
 `.xslint.yml` sets a preset, turns a check off, re-grades another and excludes
-a directory, the server must publish for every stylesheet exactly what the
-`xslint` command line run in that project reports for it.
+a directory, and over a workspace holding a nested project of its own, the
+server must publish for every stylesheet exactly what the `xslint` command
+line run in that project reports for it.
 
 ## License
 

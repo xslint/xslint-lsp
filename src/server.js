@@ -13,7 +13,7 @@ const {
 const {TextDocument} = require('vscode-languageserver-textdocument')
 const {diagnostics} = require('./diagnostics')
 const {actions} = require('./actions')
-const {belongs, file, stylesheets, sources} = require('./corpus')
+const {belongs, file, stylesheets, sources, scoped} = require('./corpus')
 const {settled} = require('./settings')
 const {verdict} = require('./verdict')
 
@@ -67,6 +67,32 @@ let watching = false
  */
 
 /**
+ * What a document is judged under: the settings `xslint` run from its
+ * directory reads, the `.xslint.yml` they come from and its problems, and the
+ * part of the corpus that run would read.
+ * @param {TextDocument} document - The document
+ * @return {{settings: object, configs: Array.<string>,
+ *  problems: Array.<object>, corpus: Array.<object>}} - What it is judged under
+ */
+const judged = function(document) {
+  const found = settled(path.dirname(file(document.uri)))
+  return {...found, corpus: scoped(corpus, found.configs)}
+}
+
+/**
+ * Publish the problems of every configuration found onto its own file.
+ * @param {Array.<string>} configs - The configuration files
+ * @param {Array.<object>} problems - Their problems, as diagnostics
+ */
+const noted = function(configs, problems) {
+  for (const config of configs) {
+    connection.sendDiagnostics({
+      uri: pathToFileURL(config).href, diagnostics: problems,
+    })
+  }
+}
+
+/**
  * Lint one document among the workspace's other stylesheets and push its
  * diagnostics to the editor, under the `.xslint.yml` that `xslint` run from
  * the document's directory reads, whose problems are pushed onto that file.
@@ -78,17 +104,11 @@ let watching = false
  * @param {TextDocument} document - The document to lint
  */
 const check = function(document) {
-  const {settings, configs, problems} = settled(
-    path.dirname(file(document.uri)),
-  )
-  for (const config of configs) {
-    connection.sendDiagnostics({
-      uri: pathToFileURL(config).href, diagnostics: problems,
-    })
-  }
+  const {settings, configs, problems, corpus: read} = judged(document)
+  noted(configs, problems)
   connection.sendDiagnostics({
     uri: document.uri,
-    diagnostics: diagnostics(verdict(document, corpus, settings)),
+    diagnostics: diagnostics(verdict(document, read, settings)),
   })
 }
 
@@ -144,10 +164,8 @@ const acted = function(params) {
   const document = documents.get(params.textDocument.uri)
   let found = []
   if (document) {
-    found = actions(
-      document, params.range, corpus,
-      settled(path.dirname(file(document.uri))).settings,
-    )
+    const {settings, corpus: read} = judged(document)
+    found = actions(document, params.range, read, settings)
   }
   return found
 }
@@ -167,18 +185,21 @@ const initialized = function() {
 }
 
 /**
- * Re-check every open document once a `.xslint.yml` changes, and clear the
- * problems a deleted one leaves behind, which no check publishes again once
- * the search no longer finds the file.
+ * Judge a `.xslint.yml` that changed on its own, and re-check every open
+ * document. A file created or rewritten has its problems published whether or
+ * not a document under it is open, so an error fixed after the last such
+ * document closed does not stand; a deleted one has its problems cleared,
+ * since no search finds it again to publish anything.
  * @param {{changes: Array.<{uri: string, type: number}>}} params - The
  *  changed files
  */
 const watched = function(params) {
   for (const change of params.changes) {
+    const config = file(change.uri)
     if (change.type === FileChangeType.Deleted) {
-      connection.sendDiagnostics({
-        uri: pathToFileURL(file(change.uri)).href, diagnostics: [],
-      })
+      noted([config], [])
+    } else {
+      noted([config], settled(path.dirname(config)).problems)
     }
   }
   for (const document of documents.all()) {

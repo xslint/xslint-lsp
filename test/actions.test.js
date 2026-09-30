@@ -9,6 +9,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const {TextDocument} = require('vscode-languageserver-textdocument')
 const {actions} = require('../src/actions')
+const {settings} = require('./fixtures/settings')
 
 /**
  * A TextDocument built from a committed fixture.
@@ -35,18 +36,6 @@ const corpus = function(name) {
       path.resolve(__dirname, 'fixtures', name), 'utf-8',
     ),
   }]
-}
-
-/**
- * What xslint's `settingsOf` answers, spelled out for one run.
- * @param {object} said - The keys that differ from a bare run
- * @return {object} - The settings
- */
-const settings = function(said) {
-  return {
-    suppress: [], overrides: {}, only: [], preset: 'recommended',
-    excluded: () => false, problems: [], ...said,
-  }
 }
 
 /**

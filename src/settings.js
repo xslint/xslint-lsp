@@ -18,6 +18,9 @@ const NAME = '.xslint.yml'
  * The configuration file a search from a directory finds: the nearest
  * `.xslint.yml` in it or in a directory above it, which is the file xslint
  * reads, or none.
+ * @todo #63:30min Read the configuration file off what `settingsOf` answers,
+ *  once an xslint release reports the file it read, and drop this second
+ *  copy of its search, which nothing keeps in step with the first.
  * @param {string} dir - The directory the search starts in
  * @return {Array.<string>} - The file's path, or nothing
  */

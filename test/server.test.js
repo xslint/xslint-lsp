@@ -209,18 +209,44 @@ const published = async function(root, name, announced) {
 }
 
 /**
- * A copy of the committed project in a fresh temporary directory: stylesheets
- * under the `.xslint.yml` that runs every check, turns one off, re-grades
- * another, and excludes a directory. The path is the real one, so the command
- * line, which resolves its own, names the same files the server does.
+ * A fresh temporary directory under its real path, so the command line, which
+ * resolves its own, names the same files the server does.
+ * @return {string} - The directory
+ */
+const scratch = function() {
+  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'xslint-lsp-')))
+}
+
+/**
+ * A copy of the committed project: stylesheets under the `.xslint.yml` that
+ * runs every check, turns one off, re-grades another, and excludes a
+ * directory.
  * @return {string} - The project directory
  */
 const project = function() {
-  const root = fs.realpathSync(
-    fs.mkdtempSync(path.join(os.tmpdir(), 'xslint-lsp-')),
-  )
+  const root = scratch()
   fs.cpSync(path.resolve(__dirname, 'fixtures', 'project'), root,
     {recursive: true})
+  return root
+}
+
+/**
+ * A workspace holding a project of its own in `sub`, under a `.xslint.yml`
+ * running every check, beside a stylesheet outside it that calls the function
+ * the project declares — which the command line run in `sub` never reads.
+ * @return {string} - The workspace directory
+ */
+const nested = function() {
+  const root = scratch()
+  const own = path.resolve(__dirname, 'fixtures', 'project')
+  fs.mkdirSync(path.join(root, 'sub'))
+  fs.copyFileSync(
+    path.join(own, 'vendor', 'reader.xsl'), path.join(root, 'caller.xsl'),
+  )
+  fs.copyFileSync(
+    path.join(own, 'shelf.xsl'), path.join(root, 'sub', 'shelf.xsl'),
+  )
+  fs.writeFileSync(path.join(root, 'sub', '.xslint.yml'), fixture('all.yml'))
   return root
 }
 
@@ -444,13 +470,18 @@ test('takes no stylesheet of another project into the corpus',
     )
   })
 
-for (const name of ['shelf.xsl', 'main.xsl', path.join('vendor', 'reader.xsl')]) {
-  test(`publishes for ${name} what the command line reports for it`,
+for (const row of [
+  {layout: project, dir: '', name: 'shelf.xsl'},
+  {layout: project, dir: '', name: 'main.xsl'},
+  {layout: project, dir: '', name: path.join('vendor', 'reader.xsl')},
+  {layout: nested, dir: 'sub', name: 'shelf.xsl'},
+]) {
+  test(`publishes for ${path.join(row.dir, row.name)} of a ${row.layout.name} workspace what the command line reports for it`,
     {timeout: 20000}, async function() {
-      const root = project()
+      const root = row.layout()
       assert.deepEqual(
-        await published(root, name, folder(root)),
-        reported(root, name),
+        await published(root, path.join(row.dir, row.name), folder(root)),
+        reported(path.join(root, row.dir), row.name),
         'the editor cannot show what the command line does not report',
       )
     })
@@ -548,5 +579,52 @@ test('asks a client that registers watchers to watch every configuration',
       ),
       ['**/.xslint.yml'],
       'an edit to a configuration cannot go unnoticed by the server',
+    )
+  })
+
+test('clears the problems of a configuration fixed with nothing under it open',
+  {timeout: 20000}, async function() {
+    const root = configured(['violations.xsl'], 'broken.txt')
+    const uri = pathToFileURL(path.join(root, 'violations.xsl')).href
+    const config = pathToFileURL(path.join(root, '.xslint.yml')).href
+    const client = new Client()
+    client.send({id: 1, method: 'initialize',
+      params: {processId: process.pid, capabilities: {}, ...folder(root)}})
+    client.send({method: 'initialized', params: {}})
+    const opened = client.about(config)
+    client.send({method: 'textDocument/didOpen', params: {textDocument: {
+      uri: uri, languageId: 'xsl', version: 1,
+      text: fixture('violations.xsl')}}})
+    await opened
+    const shut = client.about(uri)
+    client.send({method: 'textDocument/didClose',
+      params: {textDocument: {uri: uri}}})
+    await shut
+    fs.writeFileSync(path.join(root, '.xslint.yml'), fixture('silent.yml'))
+    client.send({method: 'workspace/didChangeWatchedFiles', params: {changes: [{
+      uri: config, type: 2}]}})
+    const found = await client.showing(config)
+    await client.close()
+    assert.deepEqual(
+      found, [], 'a configuration that parses cannot keep the error it had',
+    )
+  })
+
+test('publishes the problems of a configuration created with nothing open',
+  {timeout: 20000}, async function() {
+    const root = workspace(['violations.xsl'])
+    const config = pathToFileURL(path.join(root, '.xslint.yml')).href
+    const client = new Client()
+    client.send({id: 1, method: 'initialize',
+      params: {processId: process.pid, capabilities: {}, ...folder(root)}})
+    client.send({method: 'initialized', params: {}})
+    fs.writeFileSync(path.join(root, '.xslint.yml'), fixture('unknown.yml'))
+    client.send({method: 'workspace/didChangeWatchedFiles', params: {changes: [{
+      uri: config, type: 1}]}})
+    const found = await client.showing(config)
+    await client.close()
+    assert.ok(
+      (found ?? []).some((one) => one.message.includes('presets')),
+      'a configuration nobody has a stylesheet open under cannot go unjudged',
     )
   })
