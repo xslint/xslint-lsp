@@ -22,6 +22,7 @@ jobs:
           node-version: 22
       - name: Bump @maxonfjvipon/xslint to the released version
         id: bump
+        timeout-minutes: 20
         env:
           NEW: ${{ github.event.client_payload.version }}
         run: |
@@ -33,10 +34,24 @@ jobs:
             exit 0
           fi
           echo "waiting for @maxonfjvipon/xslint@${NEW} to propagate to npm"
-          for _ in $(seq 1 30); do
-            test -n "$(npm view "@maxonfjvipon/xslint@${NEW}" version 2>/dev/null)" && break
-            sleep 10
+          streak=0
+          for attempt in $(seq 1 30); do
+            if reason="$(timeout 20 npm pack --dry-run --prefer-online "@maxonfjvipon/xslint@${NEW}" 2>&1 > /dev/null)"; then
+              streak=$((streak + 1))
+            else
+              code=$?
+              streak=0
+              echo "attempt ${attempt} missed with exit ${code}: $(grep -m 1 'npm error' <<< "${reason}" || echo 'nothing on stderr')"
+            fi
+            test "${streak}" -ge 3 && break
+            if [ "${attempt}" -lt 30 ]; then
+              sleep 10
+            fi
           done
+          if [ "${streak}" -lt 3 ]; then
+            echo "::error::@maxonfjvipon/xslint@${NEW} did not resolve three times in a row in 30 attempts ten seconds apart"
+            exit 1
+          fi
           npm install --save "@maxonfjvipon/xslint@^${NEW}"
           echo "changed=true" >> "${GITHUB_OUTPUT}"
       - name: Validate against the new xslint
