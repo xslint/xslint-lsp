@@ -71,36 +71,111 @@ test('the Open VSX publish waits between its attempts', function() {
   )
 })
 
-test('the cascade waits on the document npm install resolves through', function() {
-  assert.doesNotMatch(
-    script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
-    /npm view "@maxonfjvipon\/xslint@/,
-    'npm view reads a packument the registry caches apart from the one npm install reads',
-  )
-})
+/**
+ * Every wait on a release reaching npm: the workflow, the step, the package.
+ * @type {Array.<Array.<string>>}
+ */
+const PROBES = [
+  ['cascade.yml', 'Bump @maxonfjvipon/xslint', '@maxonfjvipon/xslint', 'NEW'],
+  ['release.yml', 'Wait for the released server', 'xslint-lsp', 'VERSION'],
+]
 
-test('the cascade probe revalidates what npm has cached', function() {
-  assert.match(
-    script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
-    /npm pack --dry-run --prefer-online "@maxonfjvipon\/xslint@\$\{NEW\}"/,
-    'a probe that trusts the local cache sees a stale miss for five minutes',
-  )
-})
+/**
+ * The text a regular expression reads as the one given.
+ * @param {string} text - Anything
+ * @return {string} - The same text, every special character escaped
+ */
+const escaped = function(text) {
+  return text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
+}
 
-test('the cascade probe asks for several resolutions in a row', function() {
-  assert.match(
-    script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
-    /-ge [2-9]\b/,
-    'one lucky edge of the registry cannot be allowed to stand for all of them',
-  )
-})
+/**
+ * The seconds a probe may spend at worst, every call timing out.
+ * @param {string} text - The step holding the probe
+ * @return {number} - Seconds
+ * @throws {Error} - When the step sleeps in more than one place
+ */
+const worst = function(text) {
+  const sleeps = text.match(/^ +sleep \d+$/gm) ?? []
+  if (sleeps.length !== 1) {
+    throw new Error(`a probe must sleep in exactly one place, this one sleeps in ${sleeps.length}`)
+  }
+  const attempts = Number(text.match(/seq 1 (\d+)\)/)[1])
+  return attempts * Number(text.match(/timeout (\d+) npm pack /)[1]) +
+    (attempts - 1) * Number(sleeps[0].trim().split(' ')[1])
+}
 
-test('the cascade fails loudly when the release never resolves', function() {
-  assert.match(
-    script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
-    /::error::[^\n]+\n +exit 1/,
-    'a probe that falls through silently blames the install for the wait',
-  )
+PROBES.forEach(([name, step, pkg, variable]) => {
+  test(`${name} waits on the document npm install resolves through`, function() {
+    assert.doesNotMatch(
+      script(name, step),
+      new RegExp(`npm view "${escaped(pkg)}@`),
+      'npm view reads a packument the registry caches apart from the one npm install reads',
+    )
+  })
+  test(`${name} probe revalidates what npm has cached`, function() {
+    assert.match(
+      script(name, step),
+      new RegExp(`npm pack --dry-run --prefer-online "${escaped(pkg)}@\\$\\{${variable}\\}"`),
+      'a probe that trusts the local cache sees a stale miss for five minutes',
+    )
+  })
+  test(`${name} probe asks for several resolutions in a row`, function() {
+    assert.match(
+      script(name, step),
+      /-ge [2-9]\b/,
+      'one lucky edge of the registry cannot be allowed to stand for all of them',
+    )
+  })
+  test(`${name} fails loudly when the release never resolves`, function() {
+    assert.match(
+      script(name, step),
+      /::error::[^\n]+\n +exit 1/,
+      'a probe that falls through silently blames the install for the wait',
+    )
+  })
+  test(`${name} probe starts its count over on a miss`, function() {
+    assert.match(
+      script(name, step),
+      /\n +else\n(?: +(?!fi\n)\S[^\n]*\n)*? +streak=0\n/,
+      'a count that survives a miss asks for three resolutions at any time, not in a row',
+    )
+  })
+  test(`${name} probe is bounded by a step timeout`, function() {
+    assert.match(
+      script(name, step),
+      /^ +timeout-minutes: \d+$/m,
+      'a probe without a timeout of its own can hold the job for six hours',
+    )
+  })
+  test(`${name} probe bounds every call it makes`, function() {
+    assert.match(
+      script(name, step),
+      /timeout \d+ npm pack /,
+      'one hung request would spend the step timeout before the error is ever printed',
+    )
+  })
+  test(`${name} probe keeps the reason of every miss`, function() {
+    assert.match(
+      script(name, step),
+      /reason="\$\(timeout \d+ npm pack [^\n]*2>&1 > \/dev\/null\)"/,
+      'a give-up that discards stderr cannot tell notarget from a network failure',
+    )
+  })
+  test(`${name} probe does not sleep after its last attempt`, function() {
+    assert.match(
+      script(name, step),
+      /seq 1 (\d+)\)[\s\S]*?if \[ "\$\{attempt\}" -lt \1 \]; then\n +sleep \d+/,
+      'a sleep after the final miss only delays the error',
+    )
+  })
+  test(`${name} probe gives up only after its step timeout allows`, function() {
+    assert.ok(
+      worst(script(name, step)) <=
+        60 * Number(script(name, step).match(/^ +timeout-minutes: (\d+)$/m)[1]),
+      'a step timeout shorter than the probe kills it before the error is ever printed',
+    )
+  })
 })
 
 test('the cascade install resolves from what the probe left cached', function() {
@@ -111,42 +186,34 @@ test('the cascade install resolves from what the probe left cached', function() 
   )
 })
 
-test('the cascade probe starts its count over on a miss', function() {
+test('the extension install resolves from what the probe left cached', function() {
   assert.match(
-    script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
-    /\n +else\n(?: +(?!fi\n)\S[^\n]*\n)*? +streak=0\n/,
-    'a count that survives a miss asks for three resolutions at any time, not in a row',
+    script('release.yml', 'Build the extension'),
+    /npm install --save-exact "xslint-lsp@\$\{VERSION\}"\n/,
+    'an install that asks the registry again rolls the race the probe has just won',
   )
 })
 
-test('the cascade bump is bounded by a step timeout', function() {
-  assert.match(
-    script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
-    /^ +timeout-minutes: \d+$/m,
-    'a bump without a timeout of its own can hold the job for six hours',
+test('the extension waits past the longest propagation npm has shown', function() {
+  assert.ok(
+    Number(script('release.yml', 'Wait for the released server').match(/seq 1 (\d+)\)/)[1]) *
+      Number(script('release.yml', 'Wait for the released server').match(/^ +sleep (\d+)$/m)[1]) >=
+      25 * 60,
+    'npm served xslint-lsp@0.0.15 installably only 25 minutes after its publish',
   )
 })
 
-test('the cascade probe bounds every call it makes', function() {
-  assert.match(
-    script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
-    /timeout \d+ npm pack /,
-    'one hung request would spend the step timeout before the error is ever printed',
-  )
-})
-
-test('the cascade probe keeps the reason of every miss', function() {
-  assert.match(
-    script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
-    /reason="\$\(timeout \d+ npm pack [^\n]*2>&1 > \/dev\/null\)"/,
-    'a give-up that discards stderr cannot tell notarget from a network failure',
-  )
-})
-
-test('the cascade probe does not sleep after its last attempt', function() {
-  assert.match(
-    script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
-    /seq 1 (\d+)\)[\s\S]*?if \[ "\$\{attempt\}" -lt \1 \]; then\n +sleep \d+/,
-    'a sleep after the final miss only delays the error',
+test('the extension waits for the server before it installs it', function() {
+  assert.deepStrictEqual(
+    ['Wait for the released server', 'Build the extension'].map(
+      (step) => workflow('release.yml').split(/^ +- name: /m).findIndex(
+        (block) => block.startsWith(step),
+      ),
+    ).map(
+      (index, position, all) =>
+        index > 0 && (position === 0 || all[position - 1] < index),
+    ),
+    [true, true],
+    'a wait standing behind the install lets the install roll the race alone',
   )
 })
