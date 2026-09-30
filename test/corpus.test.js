@@ -255,14 +255,15 @@ test('spells an unsaved file under the real path of its directory',
 test('spells a path written in another case in the case on disk',
   function(context) {
     const root = workspace({'lib.xsl': 'a library'})
-    if (!fs.existsSync(root.toUpperCase())) {
+    if (fs.existsSync(root.toUpperCase())) {
+      assert.equal(
+        canonical(path.join(root.toUpperCase(), 'LIB.XSL')),
+        path.join(root, 'lib.xsl'),
+        'a document spelled in another case cannot be named apart from its file',
+      )
+    } else {
       context.skip('the filesystem tells cases apart')
     }
-    assert.equal(
-      canonical(path.join(root.toUpperCase(), 'LIB.XSL')),
-      path.join(root, 'lib.xsl'),
-      'a document spelled in another case cannot be named apart from its file',
-    )
   })
 
 test('leaves a uri that names no file as it is', function() {
