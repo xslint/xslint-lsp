@@ -6,18 +6,11 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const {fileURLToPath} = require('node:url')
+const {stylesheetsOf, sourceOf} = require('@maxonfjvipon/xslint')
 
 /**
- * Directory names the walk never descends into. A workspace's own stylesheets
- * do not live in its dependencies or its build output, and on a large project
- * those trees hold far more files than the corpus itself.
- * @type {Array.<string>}
- */
-const SKIPPED = ['node_modules', 'target']
-
-/**
- * The filesystem path a document URI points at, which is the name every source
- * is keyed by, since that is the name a stylesheet read from disk has. An
+ * The filesystem path a document URI points at, spelled the way the editor
+ * spelled it, which is the name its diagnostics are published under. An
  * editor also holds documents that name no file — an untitled buffer, a
  * version-control diff — and a URI that cannot be turned into a path stands
  * for one, matching nothing on disk.
@@ -33,122 +26,130 @@ const file = function(uri) {
 }
 
 /**
- * Whether the walk passes a directory by, rather than descending into it.
- * @param {string} name - The directory's name
- * @return {boolean} - True for metadata, dependency, and build directories
+ * A path as the filesystem itself spells it: every link resolved and every
+ * name in the case it is stored in, which is how xslint's walk names what it
+ * finds, so a folder announced through a link, or a drive letter the editor
+ * wrote in lower case, still holds the document. A file not yet on disk keeps
+ * its own name under the spelling of the nearest directory that is.
+ * @param {string} pth - A path, or a URI that names no file
+ * @return {string} - The same path, spelled as the filesystem spells it
  */
-const skipped = function(name) {
-  return name.startsWith('.') || SKIPPED.includes(name)
+const canonical = function(pth) {
+  let found = pth
+  try {
+    found = fs.realpathSync.native(pth)
+  } catch {
+    if (path.isAbsolute(pth) && path.dirname(pth) !== pth) {
+      found = path.join(canonical(path.dirname(pth)), path.basename(pth))
+    }
+  }
+  return found
 }
 
 /**
- * Whether a path lies below a directory, under no name the walk passes by. A
- * path on another drive lies below nothing here, and `path.relative` says so
- * by answering an absolute path of its own, which Windows alone produces.
+ * A file standing in a directory above a document, spelled the way the editor
+ * spelled the document, so a configuration's problems land on the file the
+ * editor knows by that name rather than on a second spelling of it. Where a
+ * link between the two makes the climb land elsewhere, the file keeps the
+ * filesystem's own spelling.
+ * @param {string} pth - The file, as the filesystem spells it
+ * @param {string} own - The document, as the filesystem spells it
+ * @param {string} spelled - The document, as the editor spelled it
+ * @return {string} - The file, spelled beside the document
+ */
+const beside = function(pth, own, spelled) {
+  const candidate = path.join(
+    path.dirname(spelled), path.relative(path.dirname(own), path.dirname(pth)),
+    path.basename(pth),
+  )
+  let found = pth
+  if (canonical(path.dirname(candidate)) === path.dirname(pth)) {
+    found = candidate
+  }
+  return found
+}
+
+/**
+ * Whether a path is a directory or lies below it. A path on another drive lies
+ * below nothing here, and `path.relative` says so by answering an absolute
+ * path of its own, which Windows alone produces.
  * @param {string} dir - The directory
  * @param {string} pth - The path to judge
- * @return {boolean} - True where the walk would have reached it
+ * @return {boolean} - True where the path is the directory or under it
  */
 const inside = function(dir, pth) {
   const below = path.relative(dir, pth)
-  return !path.isAbsolute(below) &&
-    !below.split(path.sep).slice(0, -1).some(skipped)
+  return !path.isAbsolute(below) && below.split(path.sep)[0] !== '..'
 }
 
 /**
- * Whether the corpus is a path's place: the walk would have found it below one
- * of the workspace's folders. An editor also saves stylesheets the workspace
- * does not hold — a scratch file, a module of another project — and letting one
- * of those into the corpus makes it vouch for declarations nothing in the
- * project uses, silencing a cross-file check over code the project never sees.
+ * The directory `xslint` is run in, with no path, to read the project a
+ * stylesheet belongs to: the one holding the `.xslint.yml` the settings come
+ * from, where that file sits inside any workspace folder holding the
+ * stylesheet, or else the deepest such folder. A configuration above the
+ * workspace — one in a home directory — decides the rules but not what is
+ * read, or a keystroke would walk the whole home. A stylesheet outside every
+ * folder has no project, and is read alone, as `xslint` naming that file
+ * reads it.
  * @param {Array.<string>} folders - The workspace's root directories
- * @param {string} pth - The path to judge
- * @return {boolean} - True when the corpus is where it belongs
+ * @param {object} settings - What xslint's `settingsOf` answers
+ * @param {string} own - The stylesheet's path
+ * @return {Array.<string>} - The directory, or none
  */
-const belongs = function(folders, pth) {
-  return pth.endsWith('.xsl') && folders.some((dir) => inside(dir, pth))
-}
-
-/**
- * Every stylesheet below a directory. A symbolic link is neither a directory
- * nor a file here, so the walk steps over one rather than following it into a
- * tree it has already read, or into a loop. The extension is the one xslint's
- * own walk takes, so an editor and a command line agree on what the corpus is.
- * @param {string} dir - The directory to walk
- * @return {Array.<string>} - Paths of the `.xsl` files under it
- */
-const xsls = function(dir) {
-  let found = []
-  for (const entry of fs.readdirSync(dir, {withFileTypes: true})) {
-    if (entry.isDirectory() && !skipped(entry.name)) {
-      found = found.concat(xsls(path.join(dir, entry.name)))
-    } else if (entry.isFile() && entry.name.endsWith('.xsl')) {
-      found.push(path.join(dir, entry.name))
-    }
+const rooted = function(folders, settings, own) {
+  const holding = folders.filter((dir) => inside(dir, own))
+  let found = [...holding].sort((one, two) => two.length - one.length)
+    .slice(0, 1)
+  if (settings.file &&
+    holding.some((dir) => inside(dir, path.dirname(settings.file)))) {
+    found = [path.dirname(settings.file)]
   }
   return found
 }
 
 /**
- * Every stylesheet the workspace holds, read once. This is what xslint's
- * cross-file checks judge a declaration against: a function or a named template
- * that one module declares and another calls is alive, and only a corpus
- * holding both of them can see that. A folder the client no longer has is
- * passed over, so a stale root costs a smaller corpus rather than the server.
- * @param {Array.<string>} folders - The workspace's root directories
- * @return {Array.<{file: string, content: string}>} - Sources for `lint`
+ * The stylesheets `xslint` run in the project's directory reads, found by
+ * xslint's own walk, so an `.xslt` is read, and what a `.gitignore` or an
+ * `exclude:` keeps out is kept out here too, and the warnings that walk gives
+ * on the way. With no project directory it is the stylesheet alone. Whatever
+ * the settings exclude is dropped from either, so a configuration nobody
+ * could read leaves nothing to lint.
+ * @param {Array.<string>} roots - The project's directory, or none
+ * @param {object} settings - What xslint's `settingsOf` answers
+ * @param {string} own - The stylesheet's path
+ * @return {{stylesheets: Array.<string>, problems: Array.<string>}} - Paths of
+ *  the stylesheets read, and one sentence per warning
  */
-const stylesheets = function(folders) {
-  const corpus = new Map()
-  for (const folder of folders.filter((dir) => fs.existsSync(dir))) {
-    for (const found of xsls(folder)) {
-      corpus.set(found, fs.readFileSync(found, 'utf-8'))
-    }
+const gathered = function(roots, settings, own) {
+  let found = {stylesheets: [own], problems: []}
+  if (roots.length > 0) {
+    found = stylesheetsOf(roots, settings)
   }
-  return [...corpus].map(([name, text]) => ({file: name, content: text}))
+  return {
+    stylesheets: found.stylesheets.filter((one) => !settings.excluded(one)),
+    problems: found.problems,
+  }
 }
 
 /**
- * The corpus with a document's live text standing in for the copy read from
- * disk, so every check sees the unsaved edits, and with the document in it even
- * when it lives outside the workspace.
- * @param {Array.<{file: string, content: string}>} corpus - The corpus
- * @param {TextDocument} document - The document being edited
- * @return {Array.<{file: string, content: string}>} - Sources for `lint`
+ * What `lint` takes for each stylesheet: the text of its open buffer, so every
+ * check sees the unsaved edits, or else what the disk holds, with the
+ * parameter entities and the missing hrefs read beside it by xslint itself.
+ * @param {Array.<string>} stylesheets - Paths of the stylesheets
+ * @param {Map.<string, string>} buffers - The open documents' text by path
+ * @return {Array.<object>} - Sources for `lint`
  */
-const sources = function(corpus, document) {
-  const own = file(document.uri)
-  return [
-    {file: own, content: document.getText()},
-    ...corpus.filter((source) => source.file !== own),
-  ]
-}
-
-/**
- * The part of the corpus `xslint` run beside a configuration would read: the
- * stylesheets below the directory of the `.xslint.yml` a search found, or the
- * whole workspace where it found none, which is what a bare `xslint` in the
- * workspace's root reads. A stylesheet outside a nested project is one the
- * command line run in that project never sees, so it may keep none of the
- * project's declarations alive.
- * @param {Array.<{file: string, content: string}>} corpus - The corpus
- * @param {Array.<string>} configs - The configuration a search found, if any
- * @return {Array.<{file: string, content: string}>} - The stylesheets read
- */
-const scoped = function(corpus, configs) {
-  let found = corpus
-  for (const config of configs) {
-    found = corpus.filter(
-      (source) => inside(path.dirname(config), source.file),
-    )
-  }
-  return found
+const sources = function(stylesheets, buffers) {
+  return stylesheets.map((one) => sourceOf(
+    one, buffers.get(one) ?? fs.readFileSync(one, 'utf-8'),
+  ))
 }
 
 module.exports = {
   file,
-  belongs,
-  stylesheets,
+  canonical,
+  beside,
+  rooted,
+  gathered,
   sources,
-  scoped,
 }

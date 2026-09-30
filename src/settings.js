@@ -15,12 +15,11 @@ const {diagnostics} = require('./diagnostics')
 const NAME = '.xslint.yml'
 
 /**
- * The configuration file a search from a directory finds: the nearest
- * `.xslint.yml` in it or in a directory above it, which is the file xslint
- * reads, or none.
- * @todo #63:30min Read the configuration file off what `settingsOf` answers,
- *  once an xslint release reports the file it read, and drop this second
- *  copy of its search, which nothing keeps in step with the first.
+ * The configuration file a search from a directory finds, for the one case
+ * xslint does not say which file it read: a file it refuses to read at all.
+ * @todo #63:30min Read the file a refused configuration came from off the
+ *  error `settingsOf` throws, once xslint names it there, and drop this second
+ *  copy of its search, which only the refused case still runs.
  * @param {string} dir - The directory the search starts in
  * @return {Array.<string>} - The file's path, or nothing
  */
@@ -50,12 +49,13 @@ const noted = function(messages, severity) {
 
 /**
  * What `xslint` run from a directory hands `lint`, read off the `.xslint.yml`
- * nearest to it by xslint itself, and the problems of that file. The command
- * line warns about a problem and lints on, so it is a warning here too; it
- * refuses to lint at all under a file no YAML parser reads or one naming a
- * preset that does not exist, which is normal halfway through an edit, and so
- * does the editor, excluding every stylesheet rather than guessing a
- * configuration and showing what no run of `xslint` would report.
+ * nearest to it by xslint itself, the file it read, and the problems of that
+ * file. The command line warns about a problem and lints on, so it is a
+ * warning here too; it refuses to lint at all under a file no YAML parser
+ * reads or one naming a preset that does not exist, which is normal halfway
+ * through an edit, and so does the editor, excluding every stylesheet rather
+ * than guessing a configuration and showing what no run of `xslint` would
+ * report.
  * @param {string} dir - The directory the search for `.xslint.yml` starts in
  * @return {{settings: object, configs: Array.<string>,
  *  problems: Array.<object>}} - The options `lint` takes, the file they come
@@ -65,16 +65,22 @@ const settled = function(dir) {
   let found
   try {
     const settings = settingsOf(dir)
-    found = {settings: settings, problems: noted(settings.problems, 'warning')}
+    found = {
+      settings: settings,
+      configs: [settings.file].filter(Boolean),
+      problems: noted(settings.problems, 'warning'),
+    }
   } catch (error) {
     found = {
-      settings: {excluded: () => true},
+      settings: {excluded: () => true, exclude: [], base: dir},
+      configs: located(dir),
       problems: noted([error.message], 'error'),
     }
   }
-  return {...found, configs: located(dir)}
+  return found
 }
 
 module.exports = {
   settled,
+  noted,
 }

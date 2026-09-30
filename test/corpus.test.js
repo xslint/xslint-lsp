@@ -8,18 +8,21 @@ const assert = require('node:assert')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const {pathToFileURL} = require('node:url')
-const {TextDocument} = require('vscode-languageserver-textdocument')
-const {belongs, file, stylesheets, sources, scoped} = require('../src/corpus')
+const {settingsOf} = require('@maxonfjvipon/xslint')
+const {
+  file, canonical, beside, rooted, gathered, sources,
+} = require('../src/corpus')
 
 /**
- * A project in a fresh temporary directory, holding the given files under the
- * given names, each name relative to the directory.
+ * A project in a fresh temporary directory, under its real path, holding the
+ * given files under the given names, each name relative to the directory.
  * @param {{[name: string]: string}} files - Content by relative name
  * @return {string} - The workspace directory
  */
 const workspace = function(files) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xslint-lsp-'))
+  const root = fs.realpathSync.native(
+    fs.mkdtempSync(path.join(os.tmpdir(), 'xslint-lsp-')),
+  )
   for (const [name, content] of Object.entries(files)) {
     fs.mkdirSync(path.dirname(path.join(root, name)), {recursive: true})
     fs.writeFileSync(path.join(root, name), content)
@@ -28,67 +31,195 @@ const workspace = function(files) {
 }
 
 /**
- * The corpus as names relative to a workspace, in posix form, sorted — what a
- * walk found, without the temporary directory that changes on every run.
- * @param {string} root - The workspace directory
+ * A committed fixture, as text.
+ * @param {string} name - Fixture file name under test/fixtures
+ * @return {string} - Its content
+ */
+const fixture = function(name) {
+  return fs.readFileSync(path.resolve(__dirname, 'fixtures', name), 'utf-8')
+}
+
+/**
+ * What a walk of a project found, as names relative to it in posix form,
+ * sorted, without the temporary directory that changes on every run.
+ * @param {string} root - The project directory
  * @return {Array.<string>} - The relative names
  */
 const names = function(root) {
-  return stylesheets([root])
-    .map((source) => path.relative(root, source.file).split(path.sep).join('/'))
+  return gathered(
+    [root], settingsOf(root), path.join(root, 'any.xsl'),
+  ).stylesheets
+    .map((one) => path.relative(root, one).split(path.sep).join('/'))
     .sort()
 }
 
-test('reads the stylesheets of a workspace and nothing else', function() {
+test('reads the stylesheets of a project under either suffix', function() {
   assert.deepEqual(
     names(workspace({
       'lib.xsl': 'a library',
-      'deep/nested.xsl': 'a nested one',
+      'deep/nested.xslt': 'a nested one',
       'notes.txt': 'not a stylesheet',
     })),
-    ['deep/nested.xsl', 'lib.xsl'],
+    ['deep/nested.xslt', 'lib.xsl'],
+    'a stylesheet the command line reads cannot be missing from the corpus',
   )
 })
 
-test('reads no stylesheet of a directory a workspace never lints', function() {
+test('reads no stylesheet a gitignore of the project names', function() {
   assert.deepEqual(
     names(workspace({
       'lib.xsl': 'a library',
-      'node_modules/dep/vendored.xsl': 'a dependency',
-      '.git/hooks/stale.xsl': 'version control metadata',
+      'generated.xsl': 'a build product',
+      '.gitignore': fixture('ignored.txt'),
     })),
     ['lib.xsl'],
+    'a stylesheet the command line passes by cannot enter the corpus',
   )
 })
 
-test('reads nothing from a folder the client no longer has', function() {
+test('reads a stylesheet under a directory only this server skipped',
+  function() {
+    assert.deepEqual(
+      names(workspace({'target/lib.xsl': 'a library'})),
+      ['target/lib.xsl'],
+      'a stylesheet the command line reads cannot be skipped by a rule of ours',
+    )
+  })
+
+test('reads no stylesheet the configuration excludes', function() {
   assert.deepEqual(
-    stylesheets([path.join(os.tmpdir(), 'xslint-lsp-none-of-it')]), [],
+    names(workspace({
+      'lib.xsl': 'a library',
+      'vendor/reader.xsl': 'a vendored one',
+      '.xslint.yml': fixture(path.join('project', '.xslint.yml')),
+    })),
+    ['lib.xsl'],
+    'a stylesheet the configuration excludes cannot vouch for a declaration',
+  )
+})
+
+test('warns of an exclusion that excluded nothing', function() {
+  const root = workspace({
+    'lib.xsl': 'a library',
+    '.xslint.yml': fixture(path.join('project', '.xslint.yml')),
+  })
+  assert.deepEqual(
+    gathered([root], settingsOf(root), path.join(root, 'lib.xsl')).problems,
+    ['Exclusion \'vendor/**\' in configuration excluded nothing'],
+    'a warning the command line prints about the walk cannot go unmentioned',
+  )
+})
+
+test('reads a stylesheet with no project alone', function() {
+  const loose = path.join(workspace({}), 'loose.xsl')
+  assert.deepEqual(
+    gathered([], {excluded: () => false}, loose).stylesheets,
+    [loose],
+    'a stylesheet outside every folder cannot go unread',
+  )
+})
+
+test('reads nothing where the settings exclude everything', function() {
+  const root = workspace({'lib.xsl': 'a library'})
+  assert.deepEqual(
+    gathered(
+      [root], {excluded: () => true, exclude: [], base: root},
+      path.join(root, 'lib.xsl'),
+    ).stylesheets,
+    [],
+    'a configuration nobody could read cannot leave anything to lint',
+  )
+})
+
+/**
+ * Where `xslint` is run for a stylesheet of a workspace rooted at `/w`, by
+ * where the configuration it reads sits, if anywhere.
+ * @type {Array.<{name: string, config: Array.<string>, own: string,
+ *  root: Array.<string>, folders: Array.<string>}>}
+ */
+const ROOTED = [
+  {name: 'runs in the folder where no configuration was found',
+    config: [], own: 'w/sub/lib.xsl', root: ['w']},
+  {name: 'runs beside a configuration inside the folder',
+    config: ['w', 'sub', '.xslint.yml'], own: 'w/sub/lib.xsl',
+    root: ['w/sub']},
+  {name: 'runs in the folder under a configuration above it',
+    config: ['.xslint.yml'], own: 'w/sub/lib.xsl', root: ['w']},
+  {name: 'runs nowhere for a stylesheet outside every folder',
+    config: ['elsewhere', '.xslint.yml'], own: 'elsewhere/lib.xsl', root: []},
+  {name: 'runs beside a configuration in an outer of two folders',
+    config: ['w', '.xslint.yml'], own: 'w/inner/lib.xsl', root: ['w'],
+    folders: ['w', 'w/inner']},
+  {name: 'runs nowhere for a folder that is a sibling by prefix alone',
+    config: [], own: 'w2/lib.xsl', root: []},
+]
+
+for (const row of ROOTED) {
+  test(row.name, function() {
+    const settings = {}
+    if (row.config.length > 0) {
+      settings.file = path.join(path.sep, ...row.config)
+    }
+    assert.deepEqual(
+      rooted(
+        (row.folders ?? ['w']).map(
+          (dir) => path.join(path.sep, ...dir.split('/')),
+        ),
+        settings,
+        path.join(path.sep, ...row.own.split('/')),
+      ),
+      row.root.map((dir) => path.join(path.sep, ...dir.split('/'))),
+      'xslint cannot be run anywhere but where the project lives',
+    )
+  })
+}
+
+test('runs in the deepest of two nested folders', function() {
+  assert.deepEqual(
+    rooted(
+      [path.join(path.sep, 'w'), path.join(path.sep, 'w', 'inner')], {},
+      path.join(path.sep, 'w', 'inner', 'lib.xsl'),
+    ),
+    [path.join(path.sep, 'w', 'inner')],
+    'a stylesheet cannot be judged by the outer of two folders holding it',
+  )
+})
+
+test('runs nowhere for a stylesheet on another drive', function() {
+  assert.deepEqual(
+    rooted([path.join(path.sep, 'w')], {}, 'D:\\project\\lib.xsl'),
+    [],
+    'a stylesheet on another drive cannot belong to the workspace',
   )
 })
 
 test('stands the open buffer in for the copy read from disk', function() {
   const root = workspace({'lib.xsl': 'what the disk holds'})
-  assert.deepEqual(
+  assert.equal(
     sources(
-      stylesheets([root]),
-      TextDocument.create(
-        pathToFileURL(path.join(root, 'lib.xsl')).href, 'xsl', 1,
-        'what the editor holds',
-      ),
-    ),
-    [{file: path.join(root, 'lib.xsl'), content: 'what the editor holds'}],
+      [path.join(root, 'lib.xsl')],
+      new Map([[path.join(root, 'lib.xsl'), 'what the editor holds']]),
+    )[0].content,
+    'what the editor holds',
+    'an unsaved edit cannot be judged by what the disk holds',
   )
 })
 
-test('keeps a document that lives outside the workspace', function() {
-  const loose = path.join(os.tmpdir(), 'loose.xsl')
+test('reads a stylesheet with no open buffer from disk', function() {
+  const root = workspace({'lib.xsl': 'what the disk holds'})
+  assert.equal(
+    sources([path.join(root, 'lib.xsl')], new Map())[0].content,
+    'what the disk holds',
+    'a stylesheet nobody opened cannot be read as anything but its file',
+  )
+})
+
+test('reads the missing hrefs beside a stylesheet', function() {
+  const root = workspace({'index.xsl': fixture('discovery/index.xsl')})
   assert.deepEqual(
-    sources(
-      [],
-      TextDocument.create(pathToFileURL(loose).href, 'xsl', 1, 'alone'),
-    ),
-    [{file: loose, content: 'alone'}],
+    [...sources([path.join(root, 'index.xsl')], new Map())[0].absent],
+    ['absent.xsl'],
+    'an import of a missing file cannot reach lint unannounced',
   )
 })
 
@@ -97,77 +228,77 @@ test('stands a uri in for the path a buffer without a file cannot give',
     assert.equal(file('untitled:Untitled-1'), 'untitled:Untitled-1')
   })
 
-/**
- * What a saved path is to a workspace rooted at `/w`: the name it stands
- * under, and whether the corpus is its place.
- * @type {Array.<{name: string, ask: string, belongs: boolean}>}
- */
-const SAVED = [
-  {name: 'takes a stylesheet of the workspace',
-    ask: 'lib.xsl', belongs: true},
-  {name: 'takes one buried in the workspace',
-    ask: 'deep/down/lib.xsl', belongs: true},
-  {name: 'leaves one under a directory the walk passes by',
-    ask: 'node_modules/dep/lib.xsl', belongs: false},
-  {name: 'leaves one under a directory the walk never opens',
-    ask: '.git/lib.xsl', belongs: false},
-  {name: 'leaves a file that is no stylesheet',
-    ask: 'notes.txt', belongs: false},
-]
-
-for (const row of SAVED) {
-  test(row.name, function() {
-    assert.equal(
-      belongs(
-        [path.join(path.sep, 'w')],
-        path.join(path.sep, 'w', ...row.ask.split('/')),
-      ),
-      row.belongs,
-    )
-  })
-}
-
-test('leaves a stylesheet standing beside the workspace', function() {
-  assert.ok(
-    !belongs(
-      [path.join(path.sep, 'w')], path.join(path.sep, 'elsewhere', 'lib.xsl'),
-    ),
-  )
-})
-
-test('leaves a stylesheet standing on another drive', function() {
-  assert.ok(!belongs([path.join(path.sep, 'w')], 'D:\\project\\lib.xsl'))
-})
-
-test('leaves a buffer that names no file at all', function() {
-  assert.ok(!belongs([path.join(path.sep, 'w')], 'untitled:Untitled-1'))
-})
-
-test('leaves every stylesheet when the client announced no folder', function() {
-  assert.ok(!belongs([], path.join(path.sep, 'w', 'lib.xsl')))
-})
-
-test('keeps to the stylesheets below the configuration a search found',
+test('spells a path through a link as the path the link stands for',
   function() {
-    assert.deepEqual(
-      scoped(
-        [
-          {file: path.join(path.sep, 'w', 'caller.xsl'), content: 'one'},
-          {file: path.join(path.sep, 'w', 'sub', 'shelf.xsl'), content: 'two'},
-        ],
-        [path.join(path.sep, 'w', 'sub', '.xslint.yml')],
-      ).map((source) => source.content),
-      ['two'],
-      'a stylesheet the command line run beside the configuration never reads cannot stay',
+    const root = workspace({'lib.xsl': 'a library'})
+    const link = path.join(workspace({}), 'link')
+    fs.symlinkSync(root, link, 'junction')
+    assert.equal(
+      canonical(path.join(link, 'lib.xsl')),
+      path.join(root, 'lib.xsl'),
+      'a document spelled through a link cannot be named apart from its file',
     )
   })
 
-test('keeps every stylesheet where no configuration was found', function() {
-  assert.deepEqual(
-    scoped(
-      [{file: path.join(path.sep, 'w', 'caller.xsl'), content: 'one'}], [],
-    ).map((source) => source.content),
-    ['one'],
-    'a workspace without a configuration cannot lose its corpus',
+test('spells an unsaved file under the real path of its directory',
+  function() {
+    const root = workspace({})
+    const link = path.join(workspace({}), 'link')
+    fs.symlinkSync(root, link, 'junction')
+    assert.equal(
+      canonical(path.join(link, 'new.xsl')),
+      path.join(root, 'new.xsl'),
+      'a document not yet on disk cannot keep the spelling of a link',
+    )
+  })
+
+test('spells a path written in another case in the case on disk',
+  function(context) {
+    const root = workspace({'lib.xsl': 'a library'})
+    if (fs.existsSync(root.toUpperCase())) {
+      assert.equal(
+        canonical(path.join(root.toUpperCase(), 'LIB.XSL')),
+        path.join(root, 'lib.xsl'),
+        'a document spelled in another case cannot be named apart from its file',
+      )
+    } else {
+      context.skip('the filesystem tells cases apart')
+    }
+  })
+
+test('leaves a uri that names no file as it is', function() {
+  assert.equal(
+    canonical('untitled:Untitled-1'), 'untitled:Untitled-1',
+    'a buffer without a file cannot be given a path',
   )
 })
+
+test('spells a configuration the way the editor spelled the document',
+  function() {
+    const root = workspace({'sub/lib.xsl': 'a library', '.xslint.yml': ''})
+    const link = path.join(workspace({}), 'link')
+    fs.symlinkSync(root, link, 'junction')
+    assert.equal(
+      beside(
+        path.join(root, '.xslint.yml'), path.join(root, 'sub', 'lib.xsl'),
+        path.join(link, 'sub', 'lib.xsl'),
+      ),
+      path.join(link, '.xslint.yml'),
+      'a configuration cannot be published under a spelling the editor lacks',
+    )
+  })
+
+test('keeps the real spelling where a link makes the climb land elsewhere',
+  function() {
+    const root = workspace({'deep/sub/lib.xsl': 'a library', '.xslint.yml': ''})
+    const link = path.join(workspace({}), 'link')
+    fs.symlinkSync(path.join(root, 'deep', 'sub'), link, 'junction')
+    assert.equal(
+      beside(
+        path.join(root, '.xslint.yml'),
+        path.join(root, 'deep', 'sub', 'lib.xsl'), path.join(link, 'lib.xsl'),
+      ),
+      path.join(root, '.xslint.yml'),
+      'a configuration cannot be published on a file that is not it',
+    )
+  })

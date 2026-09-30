@@ -13,8 +13,10 @@ const {
 const {TextDocument} = require('vscode-languageserver-textdocument')
 const {diagnostics} = require('./diagnostics')
 const {actions} = require('./actions')
-const {belongs, file, stylesheets, sources, scoped} = require('./corpus')
-const {settled} = require('./settings')
+const {
+  file, canonical, beside, rooted, gathered, sources,
+} = require('./corpus')
+const {settled, noted: graded} = require('./settings')
 const {verdict} = require('./verdict')
 
 /**
@@ -29,20 +31,20 @@ const connection = createConnection(ProposedFeatures.all)
 const documents = new TextDocuments(TextDocument)
 
 /**
- * The workspace's stylesheets, read when the client announces its folders. A
- * cross-file check calls a declaration dead when nothing in the corpus refers
- * to it, so a document linted on its own is told every symbol it exports is
- * unused.
- * @type {Array.<{file: string, content: string}>}
- */
-let corpus = []
-
-/**
- * The folders the client announced, which is what decides whether a saved
- * stylesheet is the workspace's to lint against.
+ * The folders the client announced, spelled as the filesystem spells them,
+ * which is what decides the project a stylesheet belongs to where no
+ * `.xslint.yml` inside one says otherwise.
  * @type {Array.<string>}
  */
 let roots = []
+
+/**
+ * Every URI a configuration's problems went out under, by the filesystem's
+ * own spelling of it: a document opened through a link names the file one
+ * way and the watcher another, and a deleted file must be cleared under both.
+ * @type {Map.<string, Set.<string>>}
+ */
+const spellings = new Map()
 
 /**
  * Whether the client lets the server ask it to watch files, which is how an
@@ -66,49 +68,101 @@ let watching = false
  *  for rather than pinning here.
  */
 
-/**
- * What a document is judged under: the settings `xslint` run from its
- * directory reads, the `.xslint.yml` they come from and its problems, and the
- * part of the corpus that run would read.
- * @param {TextDocument} document - The document
- * @return {{settings: object, configs: Array.<string>,
- *  problems: Array.<object>, corpus: Array.<object>}} - What it is judged under
+/*
+ * @todo #66:45min Publish the walk warnings of a configuration once for all
+ *  the roots it governs. A `.xslint.yml` above a multi-root workspace is
+ *  walked per folder, so an exclusion that excluded nothing under one folder
+ *  and something under another shows or hides with the document checked last,
+ *  and `watched` publishes it with none of them before the re-checks run.
+ *  Warn only of what holds over every root the file governs.
  */
-const judged = function(document) {
-  const found = settled(path.dirname(file(document.uri)))
-  return {...found, corpus: scoped(corpus, found.configs)}
+
+/**
+ * What a file is judged under: the settings `xslint` run from its directory
+ * reads, the `.xslint.yml` they come from and its problems, with the warnings
+ * xslint's walk gives beside them, and the stylesheets that run reads. It
+ * walks the project afresh every time, so a stylesheet created, deleted or
+ * newly ignored is read as the command line would read it on its next run.
+ * Everything is judged under the filesystem's own spelling of the file, and
+ * the configuration named under the editor's, where its problems belong.
+ * @param {string} spelled - The file's path, as the editor spelled it
+ * @return {{settings: object, configs: Array.<string>,
+ *  problems: Array.<object>, stylesheets: Array.<string>}} - What it is
+ *  judged under
+ */
+const judged = function(spelled) {
+  const own = canonical(spelled)
+  const found = settled(path.dirname(own))
+  const read = gathered(rooted(roots, found.settings, own), found.settings, own)
+  return {
+    ...found,
+    configs: found.configs.map((config) => beside(config, own, spelled)),
+    problems: [...found.problems, ...graded(read.problems, 'warning')],
+    stylesheets: read.stylesheets,
+  }
 }
 
 /**
- * Publish the problems of every configuration found onto its own file.
+ * The text of every open document by the path it names, as the filesystem
+ * spells it, which is what stands in for the copy on disk, saved or not.
+ * @return {Map.<string, string>} - The buffers
+ */
+const buffers = function() {
+  return new Map(
+    documents.all().map(
+      (document) => [canonical(file(document.uri)), document.getText()],
+    ),
+  )
+}
+
+/**
+ * Publish the problems of every configuration found onto its own file, and
+ * remember the URI they went out under.
  * @param {Array.<string>} configs - The configuration files
  * @param {Array.<object>} problems - Their problems, as diagnostics
  */
 const noted = function(configs, problems) {
   for (const config of configs) {
-    connection.sendDiagnostics({
-      uri: pathToFileURL(config).href, diagnostics: problems,
-    })
+    const uri = pathToFileURL(config).href
+    const real = canonical(config)
+    spellings.set(real, (spellings.get(real) ?? new Set()).add(uri))
+    connection.sendDiagnostics({uri: uri, diagnostics: problems})
   }
 }
 
 /**
- * Lint one document among the workspace's other stylesheets and push its
+ * Clear the problems of a deleted configuration under every URI they went
+ * out under, since no search finds the file again to publish anything.
+ * @param {string} config - The configuration's path, as the watcher spelled it
+ */
+const cleared = function(config) {
+  const uris = spellings.get(canonical(config)) ?? new Set()
+  uris.add(pathToFileURL(config).href)
+  spellings.delete(canonical(config))
+  for (const uri of uris) {
+    connection.sendDiagnostics({uri: uri, diagnostics: []})
+  }
+}
+
+/**
+ * Lint one document among the other stylesheets of its project and push its
  * diagnostics to the editor, under the `.xslint.yml` that `xslint` run from
  * the document's directory reads, whose problems are pushed onto that file.
- * The buffer's text stands in for its own file, so unsaved edits are checked;
- * the rest of the corpus is there only so that a cross-file check can see a
+ * Every open buffer stands in for its own file, so unsaved edits are checked;
+ * the rest of the project is there only so that a cross-file check can see a
  * declaration used elsewhere, and the defects found in it belong to those
  * files, not to this one. The configuration is read afresh every time, so an
  * edit to it is never answered with what it said before.
  * @param {TextDocument} document - The document to lint
  */
 const check = function(document) {
-  const {settings, configs, problems, corpus: read} = judged(document)
+  const {settings, configs, problems, stylesheets} = judged(file(document.uri))
   noted(configs, problems)
   connection.sendDiagnostics({
     uri: document.uri,
-    diagnostics: diagnostics(verdict(document, read, settings)),
+    diagnostics: diagnostics(
+      verdict(document, sources(stylesheets, buffers()), settings),
+    ),
   })
 }
 
@@ -129,17 +183,16 @@ const folders = function(params) {
 }
 
 /**
- * Read the workspace the client has open and announce what the server
- * supports: full-document text sync is enough, since every check re-reads the
- * whole buffer anyway, and saves are asked for because a save is what takes an
- * edit into the corpus the cross-file checks are judged against.
+ * Take the folders the client has open and announce what the server supports:
+ * full-document text sync is enough, since every check re-reads the whole
+ * buffer anyway, and saves are asked for because a save is what a sibling
+ * closed after it leaves on disk for the cross-file checks.
  * @param {{workspaceFolders: Array.<{uri: string}>, rootUri: string}} params -
  *  The client's initialize parameters
  * @return {object} - The initialize result
  */
 const initialize = function(params) {
-  roots = folders(params)
-  corpus = stylesheets(roots)
+  roots = folders(params).map(canonical)
   watching = Boolean(
     params.capabilities.workspace?.didChangeWatchedFiles?.dynamicRegistration,
   )
@@ -164,8 +217,10 @@ const acted = function(params) {
   const document = documents.get(params.textDocument.uri)
   let found = []
   if (document) {
-    const {settings, corpus: read} = judged(document)
-    found = actions(document, params.range, read, settings)
+    const {settings, stylesheets} = judged(file(document.uri))
+    found = actions(
+      document, params.range, sources(stylesheets, buffers()), settings,
+    )
   }
   return found
 }
@@ -188,8 +243,8 @@ const initialized = function() {
  * Judge a `.xslint.yml` that changed on its own, and re-check every open
  * document. A file created or rewritten has its problems published whether or
  * not a document under it is open, so an error fixed after the last such
- * document closed does not stand; a deleted one has its problems cleared,
- * since no search finds it again to publish anything.
+ * document closed does not stand; a deleted one has its problems cleared under
+ * every spelling they went out under, since no search finds it again.
  * @param {{changes: Array.<{uri: string, type: number}>}} params - The
  *  changed files
  */
@@ -197,9 +252,9 @@ const watched = function(params) {
   for (const change of params.changes) {
     const config = file(change.uri)
     if (change.type === FileChangeType.Deleted) {
-      noted([config], [])
+      cleared(config)
     } else {
-      noted([config], settled(path.dirname(config)).problems)
+      noted([config], judged(config).problems)
     }
   }
   for (const document of documents.all()) {
@@ -216,31 +271,26 @@ const changed = function(event) {
 }
 
 /*
- * @todo #45:60min Keep the corpus abreast of the files the editor does not
- *  save. A save takes that one document into the corpus, but a stylesheet
- *  added, deleted, or rewritten outside the editor — a branch checked out, a
- *  generator run, a sibling edited in another window — is not noticed, and a
- *  folder added to the workspace after startup is not read at all. Watch the
- *  workspace for `.xsl` changes through `workspace/didChangeWatchedFiles`,
- *  which the client is willing to register for, and answer
- *  `workspace/didChangeWorkspaceFolders` by reading the folders that arrive.
+ * @todo #45:60min Re-check the open documents when a stylesheet changes
+ *  outside the editor. Every check walks the project afresh, but a stylesheet
+ *  added, deleted, or rewritten by a branch checked out, a generator run, or a
+ *  sibling edited in another window re-checks nothing until the next edit, and
+ *  a folder added to the workspace after startup is not a root at all. Watch
+ *  the workspace for `.xsl` and `.xslt` changes through
+ *  `workspace/didChangeWatchedFiles`, which the client is willing to register
+ *  for, and answer `workspace/didChangeWorkspaceFolders` by taking the
+ *  folders that arrive.
  */
 
 /**
- * Take a saved stylesheet of the workspace into the corpus and re-check every
- * open one. A cross-file check should answer to what the workspace now holds
- * rather than to what it held at startup, and the squiggle a save clears is
+ * Re-check every open document once one is saved. A cross-file check should
+ * answer to what the project now holds, and the squiggle a save clears is
  * usually on another file — writing the call that brings a template to life
- * leaves the complaint on the stylesheet that declares it. A document saved
- * outside the workspace is none of its business, so it is passed over.
- * @param {{document: TextDocument}} event - The save event
+ * leaves the complaint on the stylesheet that declares it.
  */
-const saved = function(event) {
-  if (belongs(roots, file(event.document.uri))) {
-    corpus = sources(corpus, event.document)
-    for (const document of documents.all()) {
-      check(document)
-    }
+const saved = function() {
+  for (const document of documents.all()) {
+    check(document)
   }
 }
 

@@ -9,6 +9,7 @@ path = [
     "**.png",
     "**.svg",
     "**.xsl",
+    "**.xslt",
     "**/.gitignore",
     "**/.vscodeignore",
     "package-lock.json",

@@ -4,31 +4,26 @@
  */
 
 const {lint} = require('@maxonfjvipon/xslint')
-const {file, sources} = require('./corpus')
+const {file, canonical} = require('./corpus')
 
 /**
  * The defects `xslint` reports for one document when run over its project
- * under the given settings: the document's live text among the workspace's
- * other stylesheets, and only the defects found in the document itself. A
- * stylesheet the settings exclude is one the command line never reads, so it
- * draws no defect of its own and vouches for no declaration of another.
+ * under the given settings: only the defects found in the document itself,
+ * the other stylesheets being there so that a cross-file check can see a
+ * declaration used elsewhere. A document the run does not read — one the
+ * settings exclude, or one xslint's walk passes by — draws none of its own.
+ * Sources are named as the filesystem spells a path, and so is the document.
  * @param {TextDocument} document - The document to judge
- * @param {Array.<{file: string, content: string}>} corpus - The workspace's
- *  other stylesheets, which the cross-file checks are judged against
+ * @param {Array.<object>} sources - What the run reads, as `lint` takes it
  * @param {object} settings - What xslint's `settingsOf` answers for the
  *  document's project
  * @return {Array.<object>} - The document's defects
  */
-const verdict = function(document, corpus, settings) {
-  const own = file(document.uri)
+const verdict = function(document, sources, settings) {
+  const own = canonical(file(document.uri))
   let found = []
-  if (!settings.excluded(own)) {
-    found = lint(
-      sources(corpus, document).filter(
-        (source) => !settings.excluded(source.file),
-      ),
-      settings,
-    ).filter((defect) => defect.file === own)
+  if (sources.some((source) => source.file === own)) {
+    found = lint(sources, settings).filter((defect) => defect.file === own)
   }
   return found
 }

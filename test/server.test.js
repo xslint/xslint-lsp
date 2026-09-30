@@ -251,6 +251,36 @@ const nested = function() {
 }
 
 /**
+ * A copy of the committed project whose stylesheets only xslint's own walk
+ * reads right: a function called from an `.xslt` alone, another called from a
+ * stylesheet its `.gitignore` names alone, and an import of a missing file.
+ * @return {string} - The project directory
+ */
+const discovery = function() {
+  const root = scratch()
+  fs.cpSync(path.resolve(__dirname, 'fixtures', 'discovery'), root,
+    {recursive: true})
+  fs.writeFileSync(path.join(root, '.gitignore'), fixture('ignored.txt'))
+  return root
+}
+
+/**
+ * A project under a `.xslint.yml` running every check, whose function is
+ * called only from `sub`, a project of its own under another such file —
+ * which the command line run at the root reads all the same.
+ * @return {string} - The project directory
+ */
+const stacked = function() {
+  const root = scratch()
+  fs.mkdirSync(path.join(root, 'sub'))
+  fs.writeFileSync(path.join(root, 'library.xsl'), fixture('library.xsl'))
+  fs.writeFileSync(path.join(root, 'sub', 'caller.xsl'), fixture('caller.xsl'))
+  fs.writeFileSync(path.join(root, '.xslint.yml'), fixture('all.yml'))
+  fs.writeFileSync(path.join(root, 'sub', '.xslint.yml'), fixture('all.yml'))
+  return root
+}
+
+/**
  * A workspace holding the named stylesheets and, as its `.xslint.yml`, the
  * named configuration fixture.
  * @param {Array.<string>} names - Stylesheet fixture names
@@ -475,6 +505,12 @@ for (const row of [
   {layout: project, dir: '', name: 'main.xsl'},
   {layout: project, dir: '', name: path.join('vendor', 'reader.xsl')},
   {layout: nested, dir: 'sub', name: 'shelf.xsl'},
+  {layout: stacked, dir: '', name: 'library.xsl'},
+  {layout: discovery, dir: '', name: 'shelf.xsl'},
+  {layout: discovery, dir: '', name: 'reader.xslt'},
+  {layout: discovery, dir: '', name: 'ledger.xsl'},
+  {layout: discovery, dir: '', name: 'generated.xsl'},
+  {layout: discovery, dir: '', name: 'index.xsl'},
 ]) {
   test(`publishes for ${path.join(row.dir, row.name)} of a ${row.layout.name} workspace what the command line reports for it`,
     {timeout: 20000}, async function() {
@@ -493,6 +529,49 @@ test('publishes a problem of the configuration on the configuration',
       (await problems(configured(['violations.xsl'], 'unknown.yml'),
         'violations.xsl')).some((one) => one.message.includes('presets')),
       'a key the command line warns about cannot go unmentioned',
+    )
+  })
+
+/**
+ * A directory standing for another through a link to it, which Windows makes
+ * as a junction, since that needs no privilege there.
+ * @param {string} real - The directory linked to
+ * @return {string} - The link
+ */
+const linked = function(real) {
+  const link = path.join(scratch(), 'link')
+  fs.symlinkSync(real, link, 'junction')
+  return link
+}
+
+test('publishes for a document of a folder announced through a link what the command line reports for it',
+  {timeout: 20000}, async function() {
+    const root = discovery()
+    assert.deepEqual(
+      await published(root, 'shelf.xsl', folder(linked(root))),
+      reported(root, 'shelf.xsl'),
+      'a folder spelled through a link cannot cut a document off its project',
+    )
+  })
+
+test('publishes for a document opened through a link what the command line reports for it',
+  {timeout: 20000}, async function() {
+    const root = discovery()
+    assert.deepEqual(
+      await published(linked(root), 'ledger.xsl', folder(root)),
+      reported(root, 'ledger.xsl'),
+      'a document spelled through a link cannot be cut off its project',
+    )
+  })
+
+test('publishes a warning of the walk on the configuration',
+  {timeout: 20000}, async function() {
+    assert.ok(
+      (await problems(
+        configured(['violations.xsl'], path.join('project', '.xslint.yml')),
+        'violations.xsl',
+      )).some((one) => one.message.includes('excluded nothing')),
+      'an exclusion the command line warns excluded nothing cannot go unmentioned',
     )
   })
 
@@ -559,6 +638,51 @@ test('clears the problems of a configuration once it is deleted',
     await client.close()
     assert.deepEqual(
       found, [], 'a deleted configuration cannot keep its problems standing',
+    )
+  })
+
+test('clears the problems of a deleted configuration under every spelling',
+  {timeout: 20000}, async function() {
+    const root = scratch()
+    fs.writeFileSync(path.join(root, 'violations.xsl'), fixture('violations.xsl'))
+    fs.writeFileSync(path.join(root, '.xslint.yml'), fixture('unknown.yml'))
+    const link = linked(root)
+    const spelled = pathToFileURL(path.join(link, '.xslint.yml')).href
+    const client = new Client()
+    client.send({id: 1, method: 'initialize',
+      params: {processId: process.pid, capabilities: {}, ...folder(root)}})
+    client.send({method: 'initialized', params: {}})
+    const opened = client.about(spelled)
+    client.send({method: 'textDocument/didOpen', params: {textDocument: {
+      uri: pathToFileURL(path.join(link, 'violations.xsl')).href,
+      languageId: 'xsl', version: 1, text: fixture('violations.xsl')}}})
+    await opened
+    fs.rmSync(path.join(root, '.xslint.yml'))
+    client.send({method: 'workspace/didChangeWatchedFiles', params: {changes: [{
+      uri: pathToFileURL(path.join(root, '.xslint.yml')).href, type: 3}]}})
+    const found = await client.showing(spelled)
+    await client.close()
+    assert.deepEqual(
+      found, [],
+      'a deleted configuration cannot keep its problems under another spelling',
+    )
+  })
+
+test('clears a deleted configuration nothing was ever published on',
+  {timeout: 20000}, async function() {
+    const root = workspace(['violations.xsl'])
+    const config = pathToFileURL(path.join(root, '.xslint.yml')).href
+    const client = new Client()
+    client.send({id: 1, method: 'initialize',
+      params: {processId: process.pid, capabilities: {}, ...folder(root)}})
+    client.send({method: 'initialized', params: {}})
+    const shown = client.about(config)
+    client.send({method: 'workspace/didChangeWatchedFiles', params: {changes: [{
+      uri: config, type: 3}]}})
+    const found = await shown
+    await client.close()
+    assert.deepEqual(
+      found, [], 'a deleted configuration cannot be left unanswered',
     )
   })
 

@@ -6,6 +6,18 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Read exactly the stylesheets the command line reads, the way it reads them
+  (#64). The corpus now comes from xslint's own walk over the project's
+  directory, so an `.xslt` is read, a stylesheet a `.gitignore` names or
+  `exclude:` covers is passed by (and shows no diagnostics of its own), a
+  `target` directory is no longer skipped, and `broken-href` fires on an
+  import of a missing file. The walk runs on every check, so files created or
+  deleted outside the editor are read at the next one. The `.xslint.yml` the
+  problems land on is the one xslint says it read (#63), and a walk warning,
+  such as an exclusion that excluded nothing, lands there too. A folder or a
+  document reached through a symbolic link, or spelled in another case, is
+  matched against the files under its real path.
+
 ## 0.0.14 - 2026-09-30
 
 - Bump `@maxonfjvipon/xslint` to 0.6.0.

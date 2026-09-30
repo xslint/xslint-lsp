@@ -9,7 +9,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const {TextDocument} = require('vscode-languageserver-textdocument')
 const {verdict} = require('../src/verdict')
-const {settings} = require('./fixtures/settings')
+const {file} = require('../src/corpus')
 
 /**
  * A committed fixture stylesheet, as text.
@@ -21,38 +21,64 @@ const fixture = function(name) {
 }
 
 /**
- * A TextDocument built from a committed fixture.
- * @param {string} name - Fixture file name under test/fixtures
- * @return {TextDocument} - The document
+ * The defects of a fixture document, read beside the named fixtures.
+ * @param {string} name - Fixture file name of the document
+ * @param {Array.<string>} names - Fixture file names read beside it
+ * @param {object} settings - The options `lint` takes
+ * @return {Array.<object>} - The document's defects
  */
-const document = function(name) {
-  return TextDocument.create('file:///shelf.xsl', 'xsl', 1, fixture(name))
+const judged = function(name, names, settings) {
+  const doc = TextDocument.create('file:///shelf.xsl', 'xsl', 1, fixture(name))
+  return verdict(
+    doc,
+    [
+      {file: file(doc.uri), content: doc.getText()},
+      ...names.map((one, index) => ({
+        file: `elsewhere-${index}.xsl`, content: fixture(one),
+      })),
+    ],
+    settings,
+  )
 }
 
-test('draws no defect for a stylesheet the settings exclude', function() {
+test('draws no defect for a stylesheet the run does not read', function() {
   assert.deepEqual(
-    verdict(document('violations.xsl'), [], settings({excluded: () => true})),
+    verdict(
+      TextDocument.create(
+        'file:///shelf.xsl', 'xsl', 1, fixture('violations.xsl'),
+      ),
+      [{file: 'elsewhere.xsl', content: fixture('caller.xsl')}],
+      {},
+    ),
     [],
-    'a stylesheet the configuration excludes cannot be reported',
+    'a stylesheet the command line never reads cannot be reported',
   )
 })
 
-test('lets no excluded stylesheet vouch for a declaration', function() {
+test('keeps a function another stylesheet read calls out of the report',
+  function() {
+    assert.ok(
+      !judged('library.xsl', ['caller.xsl'], {}).some(
+        (defect) => defect.name === 'unused-function',
+      ),
+      'a function called from a stylesheet the run reads cannot be unused',
+    )
+  })
+
+test('publishes no defect of another stylesheet', function() {
   assert.ok(
-    verdict(
-      document('library.xsl'),
-      [{file: 'elsewhere.xsl', content: fixture('caller.xsl')}],
-      settings({excluded: (name) => name === 'elsewhere.xsl'}),
-    ).some((defect) => defect.name === 'unused-function'),
-    'a stylesheet the command line never reads cannot keep a function alive',
+    !judged('library.xsl', ['caller.xsl'], {}).some(
+      (defect) => defect.name === 'incorrect-use-of-boolean-constants',
+    ),
+    'a defect of a stylesheet read beside the document cannot be its own',
   )
 })
 
 test('grades a check the way the settings re-grade it', function() {
   assert.deepEqual(
-    verdict(
-      document('violations.xsl'), [],
-      settings({overrides: {'incorrect-use-of-boolean-constants': 'error'}}),
+    judged(
+      'violations.xsl', [],
+      {overrides: {'incorrect-use-of-boolean-constants': 'error'}},
     ).map((defect) => defect.severity),
     ['error'],
     'a re-graded check cannot keep the severity it ships with',
@@ -61,7 +87,7 @@ test('grades a check the way the settings re-grade it', function() {
 
 test('runs the preset the settings name', function() {
   assert.ok(
-    verdict(document('updated.xsl'), [], settings({preset: 'all'})).some(
+    judged('updated.xsl', [], {preset: 'all'}).some(
       (defect) => defect.name === 'missing-id-in-stylesheet',
     ),
     'a check of the whole catalog cannot go unrun under the all preset',
