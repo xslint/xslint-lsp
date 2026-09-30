@@ -142,8 +142,8 @@ const ROOTED = [
     own: 'w/sub/lib.xsl', root: ['w']},
   {name: 'runs nowhere for a stylesheet outside every folder',
     own: 'elsewhere/lib.xsl', root: []},
-  {name: 'runs in the inner of two folders for a stylesheet of both',
-    own: 'w/inner/sub/lib.xsl', root: ['w/inner'], folders: ['w', 'w/inner']},
+  {name: 'runs in the outer of two folders for a stylesheet of both',
+    own: 'w/inner/sub/lib.xsl', root: ['w'], folders: ['w', 'w/inner']},
   {name: 'runs in the outer of two folders for a stylesheet of it alone',
     own: 'w/outer/lib.xsl', root: ['w'], folders: ['w/inner', 'w']},
   {name: 'runs nowhere for a folder that is a sibling by prefix alone',
@@ -165,16 +165,17 @@ for (const row of ROOTED) {
   })
 }
 
-test('runs in the deepest of two nested folders', function() {
-  assert.deepEqual(
-    rooted(
-      [path.join(path.sep, 'w'), path.join(path.sep, 'w', 'inner')],
-      path.join(path.sep, 'w', 'inner', 'lib.xsl'),
-    ),
-    [path.join(path.sep, 'w', 'inner')],
-    'a stylesheet cannot be judged by the outer of two folders holding it',
-  )
-})
+test('runs in the outermost of two nested folders named inner first',
+  function() {
+    assert.deepEqual(
+      rooted(
+        [path.join(path.sep, 'w', 'inner'), path.join(path.sep, 'w')],
+        path.join(path.sep, 'w', 'inner', 'lib.xsl'),
+      ),
+      [path.join(path.sep, 'w')],
+      'a stylesheet cannot be judged by the inner of two folders holding it',
+    )
+  })
 
 test('runs nowhere for a stylesheet on another drive', function() {
   assert.deepEqual(

@@ -11,8 +11,10 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the configuration found walking up from that folder, over that folder's
   stylesheets, so a nested `.xslint.yml` no longer overrides the root one and
   nothing is published on it. It applies only when its directory is opened as
-  a workspace folder of its own. A document outside every folder is still
-  linted alone, under the configuration found walking up from its directory.
+  a workspace folder of its own, with no open folder holding it, since nested
+  folders are read as the outermost of them. A document outside every folder
+  is still linted alone, under the configuration found walking up from its
+  directory.
 
 ## 0.0.15 - 2026-09-30
 

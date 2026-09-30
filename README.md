@@ -44,7 +44,8 @@ diagnostic whose `code` is the rule name and whose `source` is `xslint`.
 
 A document is linted **among the other stylesheets of its project**, exactly
 the ones `xslint` run with no path argument in the workspace folder holding it
-reads, the deepest one where folders nest. The server does not
+reads, the outermost one where folders nest, since that is the root
+xslint-action runs at. The server does not
 walk the tree itself; it asks xslint's own `stylesheetsOf`, so `.xsl` and
 `.xslt` are both read, what a `.gitignore` names (unless git tracks it) and
 what `exclude:` covers are passed by, and nothing else is skipped. Each
@@ -86,9 +87,9 @@ rules, and the walk still stays inside the folder. A `.xslint.yml` in a
 directory below the folder is not read at all, exactly as the command line and
 xslint-action run at the root never read it, so nothing is published on it
 either; a nested configuration applies only when its directory is opened as a
-workspace folder of its own. A document outside every folder is linted under
-the configuration found walking up from its own directory. A stylesheet the
-configuration excludes shows no
+workspace folder of its own, with no open folder holding it. A document
+outside every folder is linted under the configuration found walking up from
+its own directory. A stylesheet the configuration excludes shows no
 diagnostics and, as on the command line, keeps no declaration of another
 stylesheet alive. The problems xslint warns about in the file — an unknown key,
 a severity it does not know, a rule naming no check, an exclusion that excluded

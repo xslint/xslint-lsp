@@ -84,18 +84,18 @@ const inside = function(dir, pth) {
 
 /**
  * The directory `xslint` is run in, with no path, to read the project a
- * stylesheet belongs to: the deepest workspace folder holding it, as the
- * command line run in that folder, or xslint-action run at the workspace
- * root, reads one `.xslint.yml` for every file under it, a nested one
- * included. A stylesheet outside every folder has no project, and is read
- * alone, as `xslint` naming that file reads it.
+ * stylesheet belongs to: the outermost workspace folder holding it, the root
+ * xslint-action runs at, which reads one `.xslint.yml` for every file under
+ * it, a nested one and a nested folder included. A stylesheet outside every
+ * folder has no project, and is read alone, as `xslint` naming that file
+ * reads it.
  * @param {Array.<string>} folders - The workspace's root directories
  * @param {string} own - The stylesheet's path
  * @return {Array.<string>} - The directory, or none
  */
 const rooted = function(folders, own) {
   return folders.filter((dir) => inside(dir, own))
-    .sort((one, two) => two.length - one.length)
+    .sort((one, two) => one.length - two.length)
     .slice(0, 1)
 }
 
