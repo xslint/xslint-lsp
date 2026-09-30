@@ -16,14 +16,20 @@ const {diagnostics} = require('../src/diagnostics')
  * A minimal LSP client over stdio: it spawns the server, frames JSON-RPC
  * messages with their `Content-Length` header, parses the server's framed
  * replies, and hands each `textDocument/publishDiagnostics` to whoever is
- * waiting. Enough to drive the server through a document's lifecycle.
+ * waiting. Enough to drive the server through a document's lifecycle. Every
+ * wait is bounded, and a server that misses one is killed, since its pipes
+ * would otherwise keep the test file, and `node --test` with it, running.
  */
 class Client {
-  /** Spawn the server and start reading its framed output. */
+  /**
+   * Spawn the server, to be killed a minute on should nothing else end it,
+   * and start reading its framed output.
+   */
   constructor() {
     this.server = spawn(
       'node', [path.resolve(__dirname, '..', 'src', 'server.js'), '--stdio'],
-      {stdio: ['pipe', 'pipe', 'inherit']},
+      {stdio: ['pipe', 'pipe', 'inherit'], timeout: 60000,
+        killSignal: 'SIGKILL'},
     )
     this.buffer = Buffer.alloc(0)
     this.waiting = []
@@ -90,21 +96,48 @@ class Client {
   }
 
   /**
-   * A promise for the next diagnostics notification.
+   * A promise that settles as the given one does, or rejects ten seconds on,
+   * having killed the server, so that a message the server never sends fails
+   * the test waiting for it instead of holding the run open.
+   * @param {Promise.<*>} promise - What is waited for
+   * @param {string} what - What the server was expected to send
+   * @return {Promise.<*>} - The same result, within the bound
+   */
+  bounded(promise, what) {
+    let timer
+    return Promise.race([
+      promise,
+      new Promise((resolve, reject) => {
+        timer = setTimeout(() => {
+          this.server.kill('SIGKILL')
+          reject(new Error(`The server sent no ${what} within ten seconds`))
+        }, 10000)
+      }),
+    ]).finally(() => clearTimeout(timer))
+  }
+
+  /**
+   * A promise for the next diagnostics notification, within the bound.
    * @return {Promise.<Array.<object>>} - The published diagnostics
    */
   diagnostics() {
-    return new Promise((resolve) => this.waiting.push(resolve))
+    return this.bounded(
+      new Promise((resolve) => this.waiting.push(resolve)), 'diagnostics',
+    )
   }
 
   /**
    * A promise for the next diagnostics notification about one document, which
-   * the server may publish among notifications about its siblings.
+   * the server may publish among notifications about its siblings, within
+   * the bound.
    * @param {string} uri - The document URI
    * @return {Promise.<Array.<object>>} - That document's diagnostics
    */
   about(uri) {
-    return new Promise((resolve) => this.awaited.set(uri, resolve))
+    return this.bounded(
+      new Promise((resolve) => this.awaited.set(uri, resolve)),
+      `diagnostics about ${uri}`,
+    )
   }
 
   /**
@@ -118,7 +151,7 @@ class Client {
    */
   async showing(uri) {
     await Promise.race([
-      this.about(uri),
+      new Promise((resolve) => this.awaited.set(uri, resolve)),
       new Promise((resolve) => setTimeout(resolve, 3000).unref()),
     ])
     return this.latest.get(uri)
@@ -126,16 +159,20 @@ class Client {
 
   /**
    * A promise for the params of the next request the server makes of the
-   * client with a method, which the client answers with an empty result.
+   * client with a method, which the client answers with an empty result,
+   * within the bound.
    * @param {string} method - The request method
    * @return {Promise.<object>} - The request's params
    */
   requested(method) {
-    return new Promise((resolve) => this.asked.set(method, resolve))
+    return this.bounded(
+      new Promise((resolve) => this.asked.set(method, resolve)),
+      `${method} request`,
+    )
   }
 
   /**
-   * Send a request and resolve with its result.
+   * Send a request and resolve with its result, within the bound.
    * @param {string} method - The request method
    * @param {object} params - The request params
    * @return {Promise.<*>} - The result
@@ -143,21 +180,26 @@ class Client {
   request(method, params) {
     this.nextId += 1
     const id = this.nextId
-    return new Promise((resolve) => {
+    return this.bounded(new Promise((resolve) => {
       this.responses.set(id, resolve)
       this.send({id: id, method: method, params: params})
-    })
+    }), `answer to ${method}`)
   }
 
   /**
    * Ask the server to shut down and exit cleanly, resolving once its process
-   * has gone. A graceful exit lets coverage flush, unlike a kill.
+   * has gone, which a server already gone has. A graceful exit lets coverage
+   * flush, unlike a kill, which only a server outstaying the bound is given.
    * @return {Promise.<void>} - Resolves when the server process exits
    */
   close() {
-    this.send({id: 2, method: 'shutdown'})
-    this.send({method: 'exit'})
-    return new Promise((resolve) => this.server.on('exit', () => resolve()))
+    let gone = Promise.resolve()
+    if (this.server.exitCode === null && this.server.signalCode === null) {
+      gone = new Promise((resolve) => this.server.once('exit', () => resolve()))
+      this.send({id: 2, method: 'shutdown'})
+      this.send({method: 'exit'})
+    }
+    return this.bounded(gone, 'exit')
   }
 }
 
@@ -231,9 +273,10 @@ const project = function() {
 }
 
 /**
- * A workspace holding a project of its own in `sub`, under a `.xslint.yml`
- * running every check, beside a stylesheet outside it that calls the function
- * the project declares — which the command line run in `sub` never reads.
+ * A workspace holding a `sub` directory under a `.xslint.yml` running every
+ * check, beside a stylesheet outside it that calls the function `sub`
+ * declares — a file the command line run at the root never reads, since it
+ * reads the one configuration found walking up from the root.
  * @return {string} - The workspace directory
  */
 const nested = function() {
@@ -277,6 +320,20 @@ const stacked = function() {
   fs.writeFileSync(path.join(root, 'sub', 'caller.xsl'), fixture('caller.xsl'))
   fs.writeFileSync(path.join(root, '.xslint.yml'), fixture('all.yml'))
   fs.writeFileSync(path.join(root, 'sub', '.xslint.yml'), fixture('all.yml'))
+  return root
+}
+
+/**
+ * A copy of the committed split project: stylesheets in `sub`, under a
+ * `.xslint.yml` asking for the recommended preset alone, below one at the root
+ * running every check — which is the one the command line run at the root
+ * applies to them.
+ * @return {string} - The project directory
+ */
+const split = function() {
+  const root = scratch()
+  fs.cpSync(path.resolve(__dirname, 'fixtures', 'split'), root,
+    {recursive: true})
   return root
 }
 
@@ -501,27 +558,72 @@ test('takes no stylesheet of another project into the corpus',
   })
 
 for (const row of [
-  {layout: project, dir: '', name: 'shelf.xsl'},
-  {layout: project, dir: '', name: 'main.xsl'},
-  {layout: project, dir: '', name: path.join('vendor', 'reader.xsl')},
-  {layout: nested, dir: 'sub', name: 'shelf.xsl'},
-  {layout: stacked, dir: '', name: 'library.xsl'},
-  {layout: discovery, dir: '', name: 'shelf.xsl'},
-  {layout: discovery, dir: '', name: 'reader.xslt'},
-  {layout: discovery, dir: '', name: 'ledger.xsl'},
-  {layout: discovery, dir: '', name: 'generated.xsl'},
-  {layout: discovery, dir: '', name: 'index.xsl'},
+  {layout: project, name: 'shelf.xsl'},
+  {layout: project, name: 'main.xsl'},
+  {layout: project, name: path.join('vendor', 'reader.xsl')},
+  {layout: nested, name: path.join('sub', 'shelf.xsl')},
+  {layout: stacked, name: 'library.xsl'},
+  {layout: stacked, name: path.join('sub', 'caller.xsl')},
+  {layout: split, name: path.join('sub', 'caller.xsl')},
+  {layout: split, name: path.join('sub', 'tools.xsl')},
+  {layout: discovery, name: 'shelf.xsl'},
+  {layout: discovery, name: 'reader.xslt'},
+  {layout: discovery, name: 'ledger.xsl'},
+  {layout: discovery, name: 'generated.xsl'},
+  {layout: discovery, name: 'index.xsl'},
 ]) {
-  test(`publishes for ${path.join(row.dir, row.name)} of a ${row.layout.name} workspace what the command line reports for it`,
+  test(`publishes for ${row.name} of a ${row.layout.name} workspace what the command line run at its root reports for it`,
     {timeout: 20000}, async function() {
       const root = row.layout()
       assert.deepEqual(
-        await published(root, path.join(row.dir, row.name), folder(root)),
-        reported(path.join(root, row.dir), row.name),
+        await published(root, row.name, folder(root)),
+        reported(root, row.name),
         'the editor cannot show what the command line does not report',
       )
     })
 }
+
+test('judges a stylesheet under a nested configuration as if it were absent',
+  {timeout: 20000}, async function() {
+    const root = split()
+    const name = path.join('sub', 'tools.xsl')
+    const kept = await published(root, name, folder(root))
+    fs.rmSync(path.join(root, 'sub', '.xslint.yml'))
+    assert.deepEqual(
+      kept,
+      await published(root, name, folder(root)),
+      'a configuration the command line at the root never reads cannot count',
+    )
+  })
+
+test('publishes nothing on a nested configuration the root run never reads',
+  {timeout: 20000}, async function() {
+    const root = split()
+    fs.copyFileSync(
+      path.resolve(__dirname, 'fixtures', 'unknown.yml'),
+      path.join(root, 'sub', '.xslint.yml'),
+    )
+    const client = new Client()
+    client.send({id: 1, method: 'initialize',
+      params: {processId: process.pid, capabilities: {}, ...folder(root)}})
+    client.send({method: 'initialized', params: {}})
+    const uri = pathToFileURL(path.join(root, 'sub', 'tools.xsl')).href
+    const opened = client.about(uri)
+    client.send({method: 'textDocument/didOpen', params: {textDocument: {
+      uri: uri, languageId: 'xsl', version: 1,
+      text: fixture(path.join('split', 'sub', 'tools.xsl'))}}})
+    await opened
+    const config = pathToFileURL(path.join(root, 'sub', '.xslint.yml')).href
+    fs.writeFileSync(path.join(root, 'sub', '.xslint.yml'), fixture('broken.txt'))
+    client.send({method: 'workspace/didChangeWatchedFiles', params: {changes: [{
+      uri: config, type: 2}]}})
+    await client.showing(uri)
+    await client.close()
+    assert.ok(
+      !client.latest.has(config),
+      'a configuration no run at the root reads cannot be judged on its own',
+    )
+  })
 
 test('publishes a problem of the configuration on the configuration',
   {timeout: 20000}, async function() {

@@ -133,39 +133,30 @@ test('reads nothing where the settings exclude everything', function() {
 
 /**
  * Where `xslint` is run for a stylesheet of a workspace rooted at `/w`, by
- * where the configuration it reads sits, if anywhere.
- * @type {Array.<{name: string, config: Array.<string>, own: string,
- *  root: Array.<string>, folders: Array.<string>}>}
+ * the folders the workspace holds.
+ * @type {Array.<{name: string, own: string, root: Array.<string>,
+ *  folders: Array.<string>}>}
  */
 const ROOTED = [
-  {name: 'runs in the folder where no configuration was found',
-    config: [], own: 'w/sub/lib.xsl', root: ['w']},
-  {name: 'runs beside a configuration inside the folder',
-    config: ['w', 'sub', '.xslint.yml'], own: 'w/sub/lib.xsl',
-    root: ['w/sub']},
-  {name: 'runs in the folder under a configuration above it',
-    config: ['.xslint.yml'], own: 'w/sub/lib.xsl', root: ['w']},
+  {name: 'runs in the folder for a stylesheet below it',
+    own: 'w/sub/lib.xsl', root: ['w']},
   {name: 'runs nowhere for a stylesheet outside every folder',
-    config: ['elsewhere', '.xslint.yml'], own: 'elsewhere/lib.xsl', root: []},
-  {name: 'runs beside a configuration in an outer of two folders',
-    config: ['w', '.xslint.yml'], own: 'w/inner/lib.xsl', root: ['w'],
-    folders: ['w', 'w/inner']},
+    own: 'elsewhere/lib.xsl', root: []},
+  {name: 'runs in the outer of two folders for a stylesheet of both',
+    own: 'w/inner/sub/lib.xsl', root: ['w'], folders: ['w', 'w/inner']},
+  {name: 'runs in the outer of two folders for a stylesheet of it alone',
+    own: 'w/outer/lib.xsl', root: ['w'], folders: ['w/inner', 'w']},
   {name: 'runs nowhere for a folder that is a sibling by prefix alone',
-    config: [], own: 'w2/lib.xsl', root: []},
+    own: 'w2/lib.xsl', root: []},
 ]
 
 for (const row of ROOTED) {
   test(row.name, function() {
-    const settings = {}
-    if (row.config.length > 0) {
-      settings.file = path.join(path.sep, ...row.config)
-    }
     assert.deepEqual(
       rooted(
         (row.folders ?? ['w']).map(
           (dir) => path.join(path.sep, ...dir.split('/')),
         ),
-        settings,
         path.join(path.sep, ...row.own.split('/')),
       ),
       row.root.map((dir) => path.join(path.sep, ...dir.split('/'))),
@@ -174,20 +165,21 @@ for (const row of ROOTED) {
   })
 }
 
-test('runs in the deepest of two nested folders', function() {
-  assert.deepEqual(
-    rooted(
-      [path.join(path.sep, 'w'), path.join(path.sep, 'w', 'inner')], {},
-      path.join(path.sep, 'w', 'inner', 'lib.xsl'),
-    ),
-    [path.join(path.sep, 'w', 'inner')],
-    'a stylesheet cannot be judged by the outer of two folders holding it',
-  )
-})
+test('runs in the outermost of two nested folders named inner first',
+  function() {
+    assert.deepEqual(
+      rooted(
+        [path.join(path.sep, 'w', 'inner'), path.join(path.sep, 'w')],
+        path.join(path.sep, 'w', 'inner', 'lib.xsl'),
+      ),
+      [path.join(path.sep, 'w')],
+      'a stylesheet cannot be judged by the inner of two folders holding it',
+    )
+  })
 
 test('runs nowhere for a stylesheet on another drive', function() {
   assert.deepEqual(
-    rooted([path.join(path.sep, 'w')], {}, 'D:\\project\\lib.xsl'),
+    rooted([path.join(path.sep, 'w')], 'D:\\project\\lib.xsl'),
     [],
     'a stylesheet on another drive cannot belong to the workspace',
   )

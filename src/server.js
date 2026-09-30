@@ -32,8 +32,8 @@ const documents = new TextDocuments(TextDocument)
 
 /**
  * The folders the client announced, spelled as the filesystem spells them,
- * which is what decides the project a stylesheet belongs to where no
- * `.xslint.yml` inside one says otherwise.
+ * which is what decides the project a stylesheet belongs to and the one
+ * `.xslint.yml` it is judged under.
  * @type {Array.<string>}
  */
 let roots = []
@@ -78,9 +78,11 @@ let watching = false
  */
 
 /**
- * What a file is judged under: the settings `xslint` run from its directory
- * reads, the `.xslint.yml` they come from and its problems, with the warnings
- * xslint's walk gives beside them, and the stylesheets that run reads. It
+ * What a file is judged under: the settings `xslint` run in the directory of
+ * its project reads, or else in its own directory, the `.xslint.yml` they come
+ * from and its problems, with the warnings xslint's walk gives beside them, and
+ * the stylesheets that run reads. One run reads one configuration, so a
+ * nested `.xslint.yml` counts for nothing unless its directory is a folder. It
  * walks the project afresh every time, so a stylesheet created, deleted or
  * newly ignored is read as the command line would read it on its next run.
  * Everything is judged under the filesystem's own spelling of the file, and
@@ -92,8 +94,9 @@ let watching = false
  */
 const judged = function(spelled) {
   const own = canonical(spelled)
-  const found = settled(path.dirname(own))
-  const read = gathered(rooted(roots, found.settings, own), found.settings, own)
+  const project = rooted(roots, own)
+  const found = settled(project[0] ?? path.dirname(own))
+  const read = gathered(project, found.settings, own)
   return {
     ...found,
     configs: found.configs.map((config) => beside(config, own, spelled)),
@@ -146,8 +149,8 @@ const cleared = function(config) {
 
 /**
  * Lint one document among the other stylesheets of its project and push its
- * diagnostics to the editor, under the `.xslint.yml` that `xslint` run from
- * the document's directory reads, whose problems are pushed onto that file.
+ * diagnostics to the editor, under the `.xslint.yml` that `xslint` run in the
+ * document's project reads, whose problems are pushed onto that file.
  * Every open buffer stands in for its own file, so unsaved edits are checked;
  * the rest of the project is there only so that a cross-file check can see a
  * declaration used elsewhere, and the defects found in it belong to those
@@ -241,10 +244,11 @@ const initialized = function() {
 
 /**
  * Judge a `.xslint.yml` that changed on its own, and re-check every open
- * document. A file created or rewritten has its problems published whether or
- * not a document under it is open, so an error fixed after the last such
- * document closed does not stand; a deleted one has its problems cleared under
- * every spelling they went out under, since no search finds it again.
+ * document. A file created or rewritten has the problems of the configuration
+ * a run where it stands reads published whether or not a document under it is
+ * open, so an error fixed after the last such document closed does not stand,
+ * and a nested one no run reads has none of its own; a deleted one has its
+ * problems cleared under every spelling they went out under.
  * @param {{changes: Array.<{uri: string, type: number}>}} params - The
  *  changed files
  */
@@ -254,7 +258,8 @@ const watched = function(params) {
     if (change.type === FileChangeType.Deleted) {
       cleared(config)
     } else {
-      noted([config], judged(config).problems)
+      const {configs, problems} = judged(config)
+      noted(configs, problems)
     }
   }
   for (const document of documents.all()) {
