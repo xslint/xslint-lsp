@@ -59,7 +59,10 @@ nothing in the corpus refers to it, so a library module linted on its own would
 be told every symbol it exports is unused, and two more — `circular-import` and
 `redundant-import` — read the files an `xsl:import` names. Only the defects
 found in the open document are published; the rest of the project is there so
-those checks can see a declaration used elsewhere.
+those checks can see a declaration used elsewhere. Paths are compared as the filesystem
+spells them, so a folder opened through a symbolic link, or with its drive
+letter in another case, still holds its documents, and the diagnostics stay on
+the names the editor gave.
 
 A document the walk passes by — one a `.gitignore` names, say — shows no
 diagnostics, because the run over the project that the editor mirrors does not

@@ -4,7 +4,7 @@
  */
 
 const {lint} = require('@maxonfjvipon/xslint')
-const {file} = require('./corpus')
+const {file, canonical} = require('./corpus')
 
 /**
  * The defects `xslint` reports for one document when run over its project
@@ -12,6 +12,7 @@ const {file} = require('./corpus')
  * the other stylesheets being there so that a cross-file check can see a
  * declaration used elsewhere. A document the run does not read — one the
  * settings exclude, or one xslint's walk passes by — draws none of its own.
+ * Sources are named as the filesystem spells a path, and so is the document.
  * @param {TextDocument} document - The document to judge
  * @param {Array.<object>} sources - What the run reads, as `lint` takes it
  * @param {object} settings - What xslint's `settingsOf` answers for the
@@ -19,7 +20,7 @@ const {file} = require('./corpus')
  * @return {Array.<object>} - The document's defects
  */
 const verdict = function(document, sources, settings) {
-  const own = file(document.uri)
+  const own = canonical(file(document.uri))
   let found = []
   if (sources.some((source) => source.file === own)) {
     found = lint(sources, settings).filter((defect) => defect.file === own)

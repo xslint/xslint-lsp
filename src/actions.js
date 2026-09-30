@@ -5,7 +5,7 @@
 
 const {fixed} = require('@maxonfjvipon/xslint')
 const {diagnostics} = require('./diagnostics')
-const {file} = require('./corpus')
+const {file, canonical} = require('./corpus')
 const {verdict} = require('./verdict')
 
 /**
@@ -57,7 +57,7 @@ const rewrite = function(uri, range, title, kind, content, resolves) {
  * @return {Array.<object>} - The code actions
  */
 const actions = function(document, range, sources, settings) {
-  const own = file(document.uri)
+  const own = canonical(file(document.uri))
   const defects = verdict(document, sources, settings)
   const span = whole(document)
   const found = []

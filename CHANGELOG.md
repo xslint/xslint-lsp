@@ -14,7 +14,9 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import of a missing file. The walk runs on every check, so files created or
   deleted outside the editor are read at the next one. The `.xslint.yml` the
   problems land on is the one xslint says it read (#63), and a walk warning,
-  such as an exclusion that excluded nothing, lands there too.
+  such as an exclusion that excluded nothing, lands there too. A folder or a
+  document reached through a symbolic link, or spelled in another case, is
+  matched against the files under its real path.
 
 ## 0.0.14 - 2026-09-30
 

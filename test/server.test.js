@@ -532,6 +532,38 @@ test('publishes a problem of the configuration on the configuration',
     )
   })
 
+/**
+ * A directory standing for another through a link to it, which Windows makes
+ * as a junction, since that needs no privilege there.
+ * @param {string} real - The directory linked to
+ * @return {string} - The link
+ */
+const linked = function(real) {
+  const link = path.join(scratch(), 'link')
+  fs.symlinkSync(real, link, 'junction')
+  return link
+}
+
+test('publishes for a document of a folder announced through a link what the command line reports for it',
+  {timeout: 20000}, async function() {
+    const root = discovery()
+    assert.deepEqual(
+      await published(root, 'shelf.xsl', folder(linked(root))),
+      reported(root, 'shelf.xsl'),
+      'a folder spelled through a link cannot cut a document off its project',
+    )
+  })
+
+test('publishes for a document opened through a link what the command line reports for it',
+  {timeout: 20000}, async function() {
+    const root = discovery()
+    assert.deepEqual(
+      await published(linked(root), 'ledger.xsl', folder(root)),
+      reported(root, 'ledger.xsl'),
+      'a document spelled through a link cannot be cut off its project',
+    )
+  })
+
 test('publishes a warning of the walk on the configuration',
   {timeout: 20000}, async function() {
     assert.ok(

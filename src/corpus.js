@@ -9,8 +9,8 @@ const {fileURLToPath} = require('node:url')
 const {stylesheetsOf, sourceOf} = require('@maxonfjvipon/xslint')
 
 /**
- * The filesystem path a document URI points at, which is the name every source
- * is keyed by, since that is the name a stylesheet read from disk has. An
+ * The filesystem path a document URI points at, spelled the way the editor
+ * spelled it, which is the name its diagnostics are published under. An
  * editor also holds documents that name no file — an untitled buffer, a
  * version-control diff — and a URI that cannot be turned into a path stands
  * for one, matching nothing on disk.
@@ -23,6 +23,50 @@ const file = function(uri) {
   } catch {
     return uri
   }
+}
+
+/**
+ * A path as the filesystem itself spells it: every link resolved and every
+ * name in the case it is stored in, which is how xslint's walk names what it
+ * finds, so a folder announced through a link, or a drive letter the editor
+ * wrote in lower case, still holds the document. A file not yet on disk keeps
+ * its own name under the spelling of the nearest directory that is.
+ * @param {string} pth - A path, or a URI that names no file
+ * @return {string} - The same path, spelled as the filesystem spells it
+ */
+const canonical = function(pth) {
+  let found = pth
+  try {
+    found = fs.realpathSync.native(pth)
+  } catch {
+    if (path.isAbsolute(pth) && path.dirname(pth) !== pth) {
+      found = path.join(canonical(path.dirname(pth)), path.basename(pth))
+    }
+  }
+  return found
+}
+
+/**
+ * A file standing in a directory above a document, spelled the way the editor
+ * spelled the document, so a configuration's problems land on the file the
+ * editor knows by that name rather than on a second spelling of it. Where a
+ * link between the two makes the climb land elsewhere, the file keeps the
+ * filesystem's own spelling.
+ * @param {string} pth - The file, as the filesystem spells it
+ * @param {string} own - The document, as the filesystem spells it
+ * @param {string} spelled - The document, as the editor spelled it
+ * @return {string} - The file, spelled beside the document
+ */
+const beside = function(pth, own, spelled) {
+  const candidate = path.join(
+    path.dirname(spelled), path.relative(path.dirname(own), path.dirname(pth)),
+    path.basename(pth),
+  )
+  let found = pth
+  if (canonical(path.dirname(candidate)) === path.dirname(pth)) {
+    found = candidate
+  }
+  return found
 }
 
 /**
@@ -41,21 +85,23 @@ const inside = function(dir, pth) {
 /**
  * The directory `xslint` is run in, with no path, to read the project a
  * stylesheet belongs to: the one holding the `.xslint.yml` the settings come
- * from, where that file sits inside the workspace folder holding the
- * stylesheet, or else that folder itself. A configuration above the workspace
- * — one in a home directory — decides the rules but not what is read, or a
- * keystroke would walk the whole home. A stylesheet outside every folder has
- * no project, and is read alone, as `xslint` naming that file reads it.
+ * from, where that file sits inside any workspace folder holding the
+ * stylesheet, or else the deepest such folder. A configuration above the
+ * workspace — one in a home directory — decides the rules but not what is
+ * read, or a keystroke would walk the whole home. A stylesheet outside every
+ * folder has no project, and is read alone, as `xslint` naming that file
+ * reads it.
  * @param {Array.<string>} folders - The workspace's root directories
  * @param {object} settings - What xslint's `settingsOf` answers
  * @param {string} own - The stylesheet's path
  * @return {Array.<string>} - The directory, or none
  */
 const rooted = function(folders, settings, own) {
-  let found = folders.filter((dir) => inside(dir, own))
-    .sort((one, two) => two.length - one.length).slice(0, 1)
+  const holding = folders.filter((dir) => inside(dir, own))
+  let found = [...holding].sort((one, two) => two.length - one.length)
+    .slice(0, 1)
   if (settings.file &&
-    found.some((dir) => inside(dir, path.dirname(settings.file)))) {
+    holding.some((dir) => inside(dir, path.dirname(settings.file)))) {
     found = [path.dirname(settings.file)]
   }
   return found
@@ -101,6 +147,8 @@ const sources = function(stylesheets, buffers) {
 
 module.exports = {
   file,
+  canonical,
+  beside,
   rooted,
   gathered,
   sources,

@@ -13,7 +13,9 @@ const {
 const {TextDocument} = require('vscode-languageserver-textdocument')
 const {diagnostics} = require('./diagnostics')
 const {actions} = require('./actions')
-const {file, rooted, gathered, sources} = require('./corpus')
+const {
+  file, canonical, beside, rooted, gathered, sources,
+} = require('./corpus')
 const {settled, noted: graded} = require('./settings')
 const {verdict} = require('./verdict')
 
@@ -29,8 +31,9 @@ const connection = createConnection(ProposedFeatures.all)
 const documents = new TextDocuments(TextDocument)
 
 /**
- * The folders the client announced, which is what decides the project a
- * stylesheet belongs to where no `.xslint.yml` inside one says otherwise.
+ * The folders the client announced, spelled as the filesystem spells them,
+ * which is what decides the project a stylesheet belongs to where no
+ * `.xslint.yml` inside one says otherwise.
  * @type {Array.<string>}
  */
 let roots = []
@@ -57,35 +60,50 @@ let watching = false
  *  for rather than pinning here.
  */
 
+/*
+ * @todo #66:45min Publish the walk warnings of a configuration once for all
+ *  the roots it governs. A `.xslint.yml` above a multi-root workspace is
+ *  walked per folder, so an exclusion that excluded nothing under one folder
+ *  and something under another shows or hides with the document checked last,
+ *  and `watched` publishes it with none of them before the re-checks run.
+ *  Warn only of what holds over every root the file governs.
+ */
+
 /**
  * What a file is judged under: the settings `xslint` run from its directory
  * reads, the `.xslint.yml` they come from and its problems, with the warnings
  * xslint's walk gives beside them, and the stylesheets that run reads. It
  * walks the project afresh every time, so a stylesheet created, deleted or
  * newly ignored is read as the command line would read it on its next run.
- * @param {string} own - The file's path
+ * Everything is judged under the filesystem's own spelling of the file, and
+ * the configuration named under the editor's, where its problems belong.
+ * @param {string} spelled - The file's path, as the editor spelled it
  * @return {{settings: object, configs: Array.<string>,
  *  problems: Array.<object>, stylesheets: Array.<string>}} - What it is
  *  judged under
  */
-const judged = function(own) {
+const judged = function(spelled) {
+  const own = canonical(spelled)
   const found = settled(path.dirname(own))
   const read = gathered(rooted(roots, found.settings, own), found.settings, own)
   return {
     ...found,
+    configs: found.configs.map((config) => beside(config, own, spelled)),
     problems: [...found.problems, ...graded(read.problems, 'warning')],
     stylesheets: read.stylesheets,
   }
 }
 
 /**
- * The text of every open document by the path it names, which is what stands
- * in for the copy on disk, saved or not.
+ * The text of every open document by the path it names, as the filesystem
+ * spells it, which is what stands in for the copy on disk, saved or not.
  * @return {Map.<string, string>} - The buffers
  */
 const buffers = function() {
   return new Map(
-    documents.all().map((document) => [file(document.uri), document.getText()]),
+    documents.all().map(
+      (document) => [canonical(file(document.uri)), document.getText()],
+    ),
   )
 }
 
@@ -150,7 +168,7 @@ const folders = function(params) {
  * @return {object} - The initialize result
  */
 const initialize = function(params) {
-  roots = folders(params)
+  roots = folders(params).map(canonical)
   watching = Boolean(
     params.capabilities.workspace?.didChangeWatchedFiles?.dynamicRegistration,
   )
