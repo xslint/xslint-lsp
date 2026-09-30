@@ -6,6 +6,8 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+## 0.0.15 - 2026-09-30
+
 - Read exactly the stylesheets the command line reads, the way it reads them
   (#64). The corpus now comes from xslint's own walk over the project's
   directory, so an `.xslt` is read, a stylesheet a `.gitignore` names or
