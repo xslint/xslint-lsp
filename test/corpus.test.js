@@ -10,7 +10,7 @@ const os = require('node:os')
 const path = require('node:path')
 const {pathToFileURL} = require('node:url')
 const {TextDocument} = require('vscode-languageserver-textdocument')
-const {belongs, file, stylesheets, sources} = require('../src/corpus')
+const {belongs, file, stylesheets, sources, scoped} = require('../src/corpus')
 
 /**
  * A project in a fresh temporary directory, holding the given files under the
@@ -145,4 +145,29 @@ test('leaves a buffer that names no file at all', function() {
 
 test('leaves every stylesheet when the client announced no folder', function() {
   assert.ok(!belongs([], path.join(path.sep, 'w', 'lib.xsl')))
+})
+
+test('keeps to the stylesheets below the configuration a search found',
+  function() {
+    assert.deepEqual(
+      scoped(
+        [
+          {file: path.join(path.sep, 'w', 'caller.xsl'), content: 'one'},
+          {file: path.join(path.sep, 'w', 'sub', 'shelf.xsl'), content: 'two'},
+        ],
+        [path.join(path.sep, 'w', 'sub', '.xslint.yml')],
+      ).map((source) => source.content),
+      ['two'],
+      'a stylesheet the command line run beside the configuration never reads cannot stay',
+    )
+  })
+
+test('keeps every stylesheet where no configuration was found', function() {
+  assert.deepEqual(
+    scoped(
+      [{file: path.join(path.sep, 'w', 'caller.xsl'), content: 'one'}], [],
+    ).map((source) => source.content),
+    ['one'],
+    'a workspace without a configuration cannot lose its corpus',
+  )
 })

@@ -6,6 +6,14 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Honor `.xslint.yml` exactly like the command line (#58). Each document is
+  linted under the configuration `xslint` run from its directory reads, so
+  `preset:`, `only:`, `rules:` and `exclude:` apply in the editor too, and a
+  problem with the file is shown on the file. A file no YAML parser reads is
+  an error on it, and nothing is linted under it. An edit to a `.xslint.yml`
+  re-checks the open documents, and the *fix all* action for the safe fixes is
+  back for a workspace whose preset has some.
+
 ## 0.0.13 - 2026-09-30
 
 - Bump `@maxonfjvipon/xslint` to 0.5.0.

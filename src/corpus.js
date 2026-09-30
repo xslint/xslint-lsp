@@ -124,9 +124,31 @@ const sources = function(corpus, document) {
   ]
 }
 
+/**
+ * The part of the corpus `xslint` run beside a configuration would read: the
+ * stylesheets below the directory of the `.xslint.yml` a search found, or the
+ * whole workspace where it found none, which is what a bare `xslint` in the
+ * workspace's root reads. A stylesheet outside a nested project is one the
+ * command line run in that project never sees, so it may keep none of the
+ * project's declarations alive.
+ * @param {Array.<{file: string, content: string}>} corpus - The corpus
+ * @param {Array.<string>} configs - The configuration a search found, if any
+ * @return {Array.<{file: string, content: string}>} - The stylesheets read
+ */
+const scoped = function(corpus, configs) {
+  let found = corpus
+  for (const config of configs) {
+    found = corpus.filter(
+      (source) => inside(path.dirname(config), source.file),
+    )
+  }
+  return found
+}
+
 module.exports = {
   file,
   belongs,
   stylesheets,
   sources,
+  scoped,
 }

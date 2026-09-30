@@ -9,6 +9,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const {TextDocument} = require('vscode-languageserver-textdocument')
 const {actions} = require('../src/actions')
+const {settings} = require('./fixtures/settings')
 
 /**
  * A TextDocument built from a committed fixture.
@@ -45,7 +46,7 @@ const WHOLE = {start: {line: 0, character: 0}, end: {line: 99, character: 0}}
 
 test('offers a quick-fix for a fixable defect in range', function() {
   assert.ok(
-    actions(document('fixable.xsl'), WHOLE, []).some(
+    actions(document('fixable.xsl'), WHOLE, [], settings({})).some(
       (action) => action.kind === 'quickfix' &&
         action.title.includes('incorrect-use-of-boolean-constants'),
     ),
@@ -53,7 +54,7 @@ test('offers a quick-fix for a fixable defect in range', function() {
 })
 
 test('the quick-fix edit writes the boolean the string stood for', function() {
-  const fix = actions(document('fixable.xsl'), WHOLE, []).find(
+  const fix = actions(document('fixable.xsl'), WHOLE, [], settings({})).find(
     (action) => action.kind === 'quickfix',
   )
   assert.ok(
@@ -67,6 +68,7 @@ test('skips a fixable defect below the requested range', function() {
     !actions(
       document('fixable.xsl'),
       {start: {line: 0, character: 0}, end: {line: 0, character: 0}}, [],
+      settings({}),
     ).some((action) => action.kind === 'quickfix'),
   )
 })
@@ -76,15 +78,65 @@ test('skips a fixable defect above the requested range', function() {
     !actions(
       document('fixable.xsl'),
       {start: {line: 9, character: 0}, end: {line: 20, character: 0}}, [],
+      settings({}),
     ).some((action) => action.kind === 'quickfix'),
   )
 })
 
 test('offers no quick-fix for a defect of another stylesheet', function() {
   assert.ok(
-    !actions(document('library.xsl'), WHOLE, corpus('caller.xsl')).some(
+    !actions(document('library.xsl'), WHOLE, corpus('caller.xsl'),
+      settings({})).some(
       (action) => action.title.includes('incorrect-use-of-boolean-constants'),
     ),
     'a fix belonging to a corpus stylesheet cannot be offered on the open one',
+  )
+})
+
+test('offers a fix-all action for the safe fixes the settings run', function() {
+  assert.ok(
+    actions(document('project/main.xsl'), WHOLE, [], settings({preset: 'all'}))
+      .some((action) => action.kind === 'source.fixAll'),
+    'a workspace running safe fixes cannot go without a fix-all',
+  )
+})
+
+test('the fix-all edit applies every safe fix', function() {
+  const all = actions(
+    document('project/main.xsl'), WHOLE, [], settings({preset: 'all'}),
+  ).find((action) => action.kind === 'source.fixAll')
+  const text = all.edit.changes['file:///t.xsl'][0].newText
+  assert.ok(
+    !text.includes('child::') && !text.includes('not(not('),
+    'a fix-all cannot leave a safe fix unapplied',
+  )
+})
+
+test('the fix-all edit leaves a suggestion alone', function() {
+  const all = actions(
+    document('project/main.xsl'), WHOLE, [], settings({preset: 'all'}),
+  ).find((action) => action.kind === 'source.fixAll')
+  assert.ok(
+    all.edit.changes['file:///t.xsl'][0].newText.includes(`test="'true'"`),
+    'a fix-all cannot apply what only --fix-suggestions writes',
+  )
+})
+
+test('offers no fix-all when no safe fix runs', function() {
+  assert.ok(
+    !actions(document('fixable.xsl'), WHOLE, [], settings({})).some(
+      (action) => action.kind === 'source.fixAll',
+    ),
+    'a fix-all cannot be offered with nothing safe to apply',
+  )
+})
+
+test('offers no action for a stylesheet the settings exclude', function() {
+  assert.deepEqual(
+    actions(
+      document('fixable.xsl'), WHOLE, [], settings({excluded: () => true}),
+    ),
+    [],
+    'a stylesheet the configuration excludes cannot be offered a fix',
   )
 })

@@ -4,14 +4,18 @@
  * SPDX-License-Identifier: MIT
  */
 
+const path = require('node:path')
+const {pathToFileURL} = require('node:url')
 const {
   createConnection, TextDocuments, TextDocumentSyncKind, ProposedFeatures,
+  DidChangeWatchedFilesNotification, FileChangeType,
 } = require('vscode-languageserver/node')
 const {TextDocument} = require('vscode-languageserver-textdocument')
-const {lint} = require('@maxonfjvipon/xslint')
 const {diagnostics} = require('./diagnostics')
 const {actions} = require('./actions')
-const {belongs, file, stylesheets, sources} = require('./corpus')
+const {belongs, file, stylesheets, sources, scoped} = require('./corpus')
+const {settled} = require('./settings')
+const {verdict} = require('./verdict')
 
 /**
  * The connection to the editor, over whatever transport the client chose
@@ -40,6 +44,13 @@ let corpus = []
  */
 let roots = []
 
+/**
+ * Whether the client lets the server ask it to watch files, which is how an
+ * edit to a `.xslint.yml` reaches the server.
+ * @type {boolean}
+ */
+let watching = false
+
 /*
  * @todo #45:90min Lint the buffer on a keystroke and the corpus on idle. A
  *  change now lints every stylesheet of the workspace — 260ms for the 54 of
@@ -56,20 +67,48 @@ let roots = []
  */
 
 /**
+ * What a document is judged under: the settings `xslint` run from its
+ * directory reads, the `.xslint.yml` they come from and its problems, and the
+ * part of the corpus that run would read.
+ * @param {TextDocument} document - The document
+ * @return {{settings: object, configs: Array.<string>,
+ *  problems: Array.<object>, corpus: Array.<object>}} - What it is judged under
+ */
+const judged = function(document) {
+  const found = settled(path.dirname(file(document.uri)))
+  return {...found, corpus: scoped(corpus, found.configs)}
+}
+
+/**
+ * Publish the problems of every configuration found onto its own file.
+ * @param {Array.<string>} configs - The configuration files
+ * @param {Array.<object>} problems - Their problems, as diagnostics
+ */
+const noted = function(configs, problems) {
+  for (const config of configs) {
+    connection.sendDiagnostics({
+      uri: pathToFileURL(config).href, diagnostics: problems,
+    })
+  }
+}
+
+/**
  * Lint one document among the workspace's other stylesheets and push its
- * diagnostics to the editor. The buffer's text stands in for its own file, so
- * unsaved edits are checked; the rest of the corpus is there only so that a
- * cross-file check can see a declaration used elsewhere, and the defects found
- * in it belong to those files, not to this one.
+ * diagnostics to the editor, under the `.xslint.yml` that `xslint` run from
+ * the document's directory reads, whose problems are pushed onto that file.
+ * The buffer's text stands in for its own file, so unsaved edits are checked;
+ * the rest of the corpus is there only so that a cross-file check can see a
+ * declaration used elsewhere, and the defects found in it belong to those
+ * files, not to this one. The configuration is read afresh every time, so an
+ * edit to it is never answered with what it said before.
  * @param {TextDocument} document - The document to lint
  */
 const check = function(document) {
-  const own = file(document.uri)
+  const {settings, configs, problems, corpus: read} = judged(document)
+  noted(configs, problems)
   connection.sendDiagnostics({
     uri: document.uri,
-    diagnostics: diagnostics(
-      lint(sources(corpus, document)).filter((one) => one.file === own),
-    ),
+    diagnostics: diagnostics(verdict(document, read, settings)),
   })
 }
 
@@ -101,6 +140,9 @@ const folders = function(params) {
 const initialize = function(params) {
   roots = folders(params)
   corpus = stylesheets(roots)
+  watching = Boolean(
+    params.capabilities.workspace?.didChangeWatchedFiles?.dynamicRegistration,
+  )
   return {
     capabilities: {
       textDocumentSync: {
@@ -108,7 +150,7 @@ const initialize = function(params) {
         change: TextDocumentSyncKind.Full,
         save: true,
       },
-      codeActionProvider: {codeActionKinds: ['quickfix']},
+      codeActionProvider: {codeActionKinds: ['quickfix', 'source.fixAll']},
     },
   }
 }
@@ -120,7 +162,49 @@ const initialize = function(params) {
  */
 const acted = function(params) {
   const document = documents.get(params.textDocument.uri)
-  return document ? actions(document, params.range, corpus) : []
+  let found = []
+  if (document) {
+    const {settings, corpus: read} = judged(document)
+    found = actions(document, params.range, read, settings)
+  }
+  return found
+}
+
+/**
+ * Ask a client that lets the server register for file events to report every
+ * change to a `.xslint.yml`, since nothing else tells the server that one
+ * turned a check off or excluded a directory.
+ */
+const initialized = function() {
+  if (watching) {
+    connection.client.register(
+      DidChangeWatchedFilesNotification.type,
+      {watchers: [{globPattern: '**/.xslint.yml'}]},
+    )
+  }
+}
+
+/**
+ * Judge a `.xslint.yml` that changed on its own, and re-check every open
+ * document. A file created or rewritten has its problems published whether or
+ * not a document under it is open, so an error fixed after the last such
+ * document closed does not stand; a deleted one has its problems cleared,
+ * since no search finds it again to publish anything.
+ * @param {{changes: Array.<{uri: string, type: number}>}} params - The
+ *  changed files
+ */
+const watched = function(params) {
+  for (const change of params.changes) {
+    const config = file(change.uri)
+    if (change.type === FileChangeType.Deleted) {
+      noted([config], [])
+    } else {
+      noted([config], settled(path.dirname(config)).problems)
+    }
+  }
+  for (const document of documents.all()) {
+    check(document)
+  }
 }
 
 /**
@@ -170,7 +254,9 @@ const closed = function(event) {
 }
 
 connection.onInitialize(initialize)
+connection.onInitialized(initialized)
 connection.onCodeAction(acted)
+connection.onDidChangeWatchedFiles(watched)
 documents.onDidChangeContent(changed)
 documents.onDidSave(saved)
 documents.onDidClose(closed)
