@@ -6,6 +6,10 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+## 0.0.14 - 2026-09-30
+
+- Bump `@maxonfjvipon/xslint` to 0.6.0.
+
 - Honor `.xslint.yml` exactly like the command line (#58). Each document is
   linted under the configuration `xslint` run from its directory reads, so
   `preset:`, `only:`, `rules:` and `exclude:` apply in the editor too, and a
