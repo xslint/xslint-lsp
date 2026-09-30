@@ -103,10 +103,50 @@ test('the cascade fails loudly when the release never resolves', function() {
   )
 })
 
-test('the cascade install revalidates what npm has cached', function() {
+test('the cascade install resolves from what the probe left cached', function() {
   assert.match(
     script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
-    /npm install --save --prefer-online "@maxonfjvipon\/xslint@\^\$\{NEW\}"/,
-    'an install that trusts the local cache can miss the version the probe just saw',
+    /npm install --save "@maxonfjvipon\/xslint@\^\$\{NEW\}"/,
+    'an install that asks the registry again rolls the race the probe has just won',
+  )
+})
+
+test('the cascade probe starts its count over on a miss', function() {
+  assert.match(
+    script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
+    /\n +else\n(?: +(?!fi\n)\S[^\n]*\n)*? +streak=0\n/,
+    'a count that survives a miss asks for three resolutions at any time, not in a row',
+  )
+})
+
+test('the cascade bump is bounded by a step timeout', function() {
+  assert.match(
+    script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
+    /^ +timeout-minutes: \d+$/m,
+    'a bump without a timeout of its own can hold the job for six hours',
+  )
+})
+
+test('the cascade probe bounds every call it makes', function() {
+  assert.match(
+    script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
+    /timeout \d+ npm pack /,
+    'one hung request would spend the step timeout before the error is ever printed',
+  )
+})
+
+test('the cascade probe keeps the reason of every miss', function() {
+  assert.match(
+    script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
+    /reason="\$\(timeout \d+ npm pack [^\n]*2>&1 > \/dev\/null\)"/,
+    'a give-up that discards stderr cannot tell notarget from a network failure',
+  )
+})
+
+test('the cascade probe does not sleep after its last attempt', function() {
+  assert.match(
+    script('cascade.yml', 'Bump @maxonfjvipon/xslint'),
+    /seq 1 (\d+)\)[\s\S]*?if \[ "\$\{attempt\}" -lt \1 \]; then\n +sleep \d+/,
+    'a sleep after the final miss only delays the error',
   )
 })
