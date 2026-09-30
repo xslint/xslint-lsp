@@ -39,6 +39,14 @@ const documents = new TextDocuments(TextDocument)
 let roots = []
 
 /**
+ * Every URI a configuration's problems went out under, by the filesystem's
+ * own spelling of it: a document opened through a link names the file one
+ * way and the watcher another, and a deleted file must be cleared under both.
+ * @type {Map.<string, Set.<string>>}
+ */
+const spellings = new Map()
+
+/**
  * Whether the client lets the server ask it to watch files, which is how an
  * edit to a `.xslint.yml` reaches the server.
  * @type {boolean}
@@ -108,15 +116,31 @@ const buffers = function() {
 }
 
 /**
- * Publish the problems of every configuration found onto its own file.
+ * Publish the problems of every configuration found onto its own file, and
+ * remember the URI they went out under.
  * @param {Array.<string>} configs - The configuration files
  * @param {Array.<object>} problems - Their problems, as diagnostics
  */
 const noted = function(configs, problems) {
   for (const config of configs) {
-    connection.sendDiagnostics({
-      uri: pathToFileURL(config).href, diagnostics: problems,
-    })
+    const uri = pathToFileURL(config).href
+    const real = canonical(config)
+    spellings.set(real, (spellings.get(real) ?? new Set()).add(uri))
+    connection.sendDiagnostics({uri: uri, diagnostics: problems})
+  }
+}
+
+/**
+ * Clear the problems of a deleted configuration under every URI they went
+ * out under, since no search finds the file again to publish anything.
+ * @param {string} config - The configuration's path, as the watcher spelled it
+ */
+const cleared = function(config) {
+  const uris = spellings.get(canonical(config)) ?? new Set()
+  uris.add(pathToFileURL(config).href)
+  spellings.delete(canonical(config))
+  for (const uri of uris) {
+    connection.sendDiagnostics({uri: uri, diagnostics: []})
   }
 }
 
@@ -219,8 +243,8 @@ const initialized = function() {
  * Judge a `.xslint.yml` that changed on its own, and re-check every open
  * document. A file created or rewritten has its problems published whether or
  * not a document under it is open, so an error fixed after the last such
- * document closed does not stand; a deleted one has its problems cleared,
- * since no search finds it again to publish anything.
+ * document closed does not stand; a deleted one has its problems cleared under
+ * every spelling they went out under, since no search finds it again.
  * @param {{changes: Array.<{uri: string, type: number}>}} params - The
  *  changed files
  */
@@ -228,7 +252,7 @@ const watched = function(params) {
   for (const change of params.changes) {
     const config = file(change.uri)
     if (change.type === FileChangeType.Deleted) {
-      noted([config], [])
+      cleared(config)
     } else {
       noted([config], judged(config).problems)
     }

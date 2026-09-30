@@ -641,6 +641,33 @@ test('clears the problems of a configuration once it is deleted',
     )
   })
 
+test('clears the problems of a deleted configuration under every spelling',
+  {timeout: 20000}, async function() {
+    const root = scratch()
+    fs.writeFileSync(path.join(root, 'violations.xsl'), fixture('violations.xsl'))
+    fs.writeFileSync(path.join(root, '.xslint.yml'), fixture('unknown.yml'))
+    const link = linked(root)
+    const spelled = pathToFileURL(path.join(link, '.xslint.yml')).href
+    const client = new Client()
+    client.send({id: 1, method: 'initialize',
+      params: {processId: process.pid, capabilities: {}, ...folder(root)}})
+    client.send({method: 'initialized', params: {}})
+    const opened = client.about(spelled)
+    client.send({method: 'textDocument/didOpen', params: {textDocument: {
+      uri: pathToFileURL(path.join(link, 'violations.xsl')).href,
+      languageId: 'xsl', version: 1, text: fixture('violations.xsl')}}})
+    await opened
+    fs.rmSync(path.join(root, '.xslint.yml'))
+    client.send({method: 'workspace/didChangeWatchedFiles', params: {changes: [{
+      uri: pathToFileURL(path.join(root, '.xslint.yml')).href, type: 3}]}})
+    const found = await client.showing(spelled)
+    await client.close()
+    assert.deepEqual(
+      found, [],
+      'a deleted configuration cannot keep its problems under another spelling',
+    )
+  })
+
 test('asks a client that registers watchers to watch every configuration',
   {timeout: 20000}, async function() {
     const client = new Client()

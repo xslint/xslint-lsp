@@ -6,10 +6,12 @@
 const test = require('node:test')
 const assert = require('node:assert')
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
+const {pathToFileURL} = require('node:url')
 const {TextDocument} = require('vscode-languageserver-textdocument')
 const {actions} = require('../src/actions')
-const {file} = require('../src/corpus')
+const {file, canonical} = require('../src/corpus')
 
 /**
  * A TextDocument built from a committed fixture.
@@ -146,5 +148,32 @@ test('offers no action for a stylesheet the run does not read', function() {
     actions(document('fixable.xsl'), WHOLE, [], {}),
     [],
     'a stylesheet the command line never reads cannot be offered a fix',
+  )
+})
+
+test('offers a quick-fix on a document opened through a link', function() {
+  const root = fs.realpathSync.native(
+    fs.mkdtempSync(path.join(os.tmpdir(), 'xslint-lsp-')),
+  )
+  fs.copyFileSync(
+    path.resolve(__dirname, 'fixtures', 'fixable.xsl'),
+    path.join(root, 'fixable.xsl'),
+  )
+  const link = path.join(
+    fs.mkdtempSync(path.join(os.tmpdir(), 'xslint-lsp-')), 'link',
+  )
+  fs.symlinkSync(root, link, 'junction')
+  const uri = pathToFileURL(path.join(link, 'fixable.xsl')).href
+  const doc = TextDocument.create(
+    uri, 'xsl', 1, fs.readFileSync(path.join(root, 'fixable.xsl'), 'utf-8'),
+  )
+  assert.ok(
+    actions(
+      doc, WHOLE,
+      [{file: canonical(path.join(link, 'fixable.xsl')), content: doc.getText()}],
+      {},
+    ).find((action) => action.kind === 'quickfix')
+      .edit.changes[uri][0].newText.includes('test="true()"'),
+    'a document spelled through a link cannot be offered an empty fix',
   )
 })
