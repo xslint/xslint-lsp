@@ -22,13 +22,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
+          set -euo pipefail
           latest="$(gh release view -R "${REPO}" --json tagName -q .tagName)"
+          assets="$(gh release view "${latest}" -R "${REPO}" --json assets -q '.assets[].name')"
+          if ! grep -qx "xslint-vscode-${latest}.vsix" <<< "${assets}"; then
+            echo "Release ${latest} carries no xslint-vscode-${latest}.vsix yet"
+            exit 0
+          fi
           listed="$(curl -fsS -X POST \
             'https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery' \
             -H 'Content-Type: application/json' \
             -H 'Accept: application/json;api-version=7.2-preview.1' \
             -d '{"filters":[{"criteria":[{"filterType":7,"value":"maxonfjvipon.xslint-vscode"}]}],"flags":1}' \
             | jq -r '.results[0].extensions[0].versions[0].version')"
+          if [ -z "${listed}" ] || [ "${listed}" = null ]; then
+            echo "::error::The Marketplace answered no version for maxonfjvipon.xslint-vscode"
+            exit 1
+          fi
           if [ "${listed}" = "${latest}" ]; then
             echo "The Marketplace already lists ${latest}"
             exit 0

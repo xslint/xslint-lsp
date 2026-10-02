@@ -245,7 +245,31 @@ test('the Marketplace reminder mentions the maintainer', function() {
 test('the Marketplace reminder stays quiet while the listing is current', function() {
   assert.match(
     script('marketplace.yml', 'Remind'),
-    /extensionquery/,
-    'a reminder that never reads the listing asks for an upload already made',
+    /if \[ "\$\{listed\}" = "\$\{latest\}" \]; then\n(?: +[^\n]*\n)*? +exit 0\n/,
+    'a reminder that ignores the listing asks for an upload already made',
+  )
+})
+
+test('the Marketplace reminder fails loudly when the listing reads as nothing', function() {
+  assert.match(
+    script('marketplace.yml', 'Remind'),
+    /if \[ -z "\$\{listed\}" \] \|\| \[ "\$\{listed\}" = null \]; then\n +echo "::error::[^\n]+\n +exit 1\n/,
+    'a gallery that answered nothing cannot be read as a listing that trails',
+  )
+})
+
+test('the Marketplace reminder waits for the release to carry its vsix', function() {
+  assert.match(
+    script('marketplace.yml', 'Remind'),
+    /\.assets\[\]\.name[\s\S]*?xslint-vscode-\$\{latest\}\.vsix[\s\S]*?exit 0\n[\s\S]*?gh issue create /,
+    'an issue filed before the release carries its vsix links to a missing file',
+  )
+})
+
+test('the Marketplace reminder stops at the first failing command', function() {
+  assert.match(
+    script('marketplace.yml', 'Remind'),
+    /^ +set -euo pipefail$/m,
+    'a curl failing in front of jq leaves an empty listing for the reminder to report',
   )
 })
