@@ -7,11 +7,24 @@ editor.
 
 ## Install
 
-This extension is published on
-[Open VSX](https://open-vsx.org/extension/maxonfjvipon/xslint-vscode) and
+This extension is published on the
+[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=maxonfjvipon.xslint-vscode)
+and [Open VSX](https://open-vsx.org/extension/maxonfjvipon/xslint-vscode), and
 attached as a `.vsix` to every
-[release](https://github.com/xslint/xslint-lsp/releases/latest). It is **not**
-on the Microsoft VS Code Marketplace.
+[release](https://github.com/xslint/xslint-lsp/releases/latest).
+
+### VS Code
+
+Open the Extensions view, search **xslint**, and click Install, or run:
+
+```bash
+code --install-extension maxonfjvipon.xslint-vscode
+```
+
+The Marketplace can trail Open VSX by a release or two; for the newest one,
+download the `.vsix` from the
+[latest release](https://github.com/xslint/xslint-lsp/releases/latest) and run
+*Extensions view → `⋯` → Install from VSIX…*.
 
 ### Cursor, VSCodium, Windsurf
 
@@ -27,19 +40,6 @@ vscode:
   extensions:
     - maxonfjvipon.xslint-vscode
 ```
-
-### VS Code (Microsoft build)
-
-VS Code searches only Microsoft's Marketplace, where this extension is not
-listed, so install from the `.vsix`:
-
-```bash
-code --install-extension xslint-vscode-<version>.vsix
-```
-
-Or download the `.vsix` from the
-[latest release](https://github.com/xslint/xslint-lsp/releases/latest) and run
-*Extensions view → `⋯` → Install from VSIX…*.
 
 ### Any other LSP editor
 

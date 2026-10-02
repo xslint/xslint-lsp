@@ -1,0 +1,50 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026 Max Trunnikov
+# SPDX-License-Identifier: MIT
+---
+name: marketplace
+'on':
+  schedule:
+    - cron: '0 9 1 * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: marketplace
+  cancel-in-progress: false
+jobs:
+  marketplace:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Remind to upload the latest extension to the Marketplace
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          latest="$(gh release view -R "${REPO}" --json tagName -q .tagName)"
+          listed="$(curl -fsS -X POST \
+            'https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery' \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json;api-version=7.2-preview.1' \
+            -d '{"filters":[{"criteria":[{"filterType":7,"value":"maxonfjvipon.xslint-vscode"}]}],"flags":1}' \
+            | jq -r '.results[0].extensions[0].versions[0].version')"
+          if [ "${listed}" = "${latest}" ]; then
+            echo "The Marketplace already lists ${latest}"
+            exit 0
+          fi
+          title="Upload xslint-vscode ${latest} to the VS Code Marketplace"
+          if [ -n "$(gh issue list -R "${REPO}" --state open --search "in:title \"${title}\"" --json number -q '.[].number')" ]; then
+            echo "An open issue already asks for ${latest}"
+            exit 0
+          fi
+          printf '%s\n' \
+            "@maxonfjvipon the Marketplace lists ${listed}, while the latest release is ${latest}." \
+            "" \
+            "CI cannot publish there, so upload it by hand:" \
+            "" \
+            "1. Download [xslint-vscode-${latest}.vsix](https://github.com/${REPO}/releases/download/${latest}/xslint-vscode-${latest}.vsix)." \
+            "2. On the [manage page](https://marketplace.visualstudio.com/manage/publishers/maxonfjvipon), pick Update in the menu of xslint and upload the file." \
+            "3. Close this issue." \
+            > body.md
+          gh issue create -R "${REPO}" --title "${title}" --body-file body.md

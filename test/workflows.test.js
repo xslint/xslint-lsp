@@ -217,3 +217,35 @@ test('the extension waits for the server before it installs it', function() {
     'a wait standing behind the install lets the install roll the race alone',
   )
 })
+
+test('the Marketplace reminder comes once a month', function() {
+  assert.match(
+    workflow('marketplace.yml'),
+    /^ +- cron: '\d+ \d+ \d+ \* \*'$/m,
+    'a reminder off a monthly schedule either nags or never comes',
+  )
+})
+
+test('the Marketplace reminder files an issue', function() {
+  assert.match(
+    script('marketplace.yml', 'Remind'),
+    /gh issue create /,
+    'a reminder that opens no issue reaches nobody',
+  )
+})
+
+test('the Marketplace reminder mentions the maintainer', function() {
+  assert.match(
+    script('marketplace.yml', 'Remind'),
+    /@maxonfjvipon\b/,
+    'an issue mentioning nobody notifies nobody',
+  )
+})
+
+test('the Marketplace reminder stays quiet while the listing is current', function() {
+  assert.match(
+    script('marketplace.yml', 'Remind'),
+    /extensionquery/,
+    'a reminder that never reads the listing asks for an upload already made',
+  )
+})
