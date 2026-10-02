@@ -245,7 +245,7 @@ test('the Marketplace reminder mentions the maintainer', function() {
 test('the Marketplace reminder stays quiet while the listing is current', function() {
   assert.match(
     script('marketplace.yml', 'Remind'),
-    /if \[ "\$\{listed\}" = "\$\{latest\}" \]; then\n(?: +[^\n]*\n)*? +exit 0\n/,
+    /if \[ "\$\{listed\}" = "\$\{latest\}" \]; then\n +echo [^\n]+\n +exit 0\n +fi\n/,
     'a reminder that ignores the listing asks for an upload already made',
   )
 })
@@ -261,7 +261,7 @@ test('the Marketplace reminder fails loudly when the listing reads as nothing', 
 test('the Marketplace reminder waits for the release to carry its vsix', function() {
   assert.match(
     script('marketplace.yml', 'Remind'),
-    /\.assets\[\]\.name[\s\S]*?xslint-vscode-\$\{latest\}\.vsix[\s\S]*?exit 0\n[\s\S]*?gh issue create /,
+    /\.assets\[\]\.name'\)"\n +if ! grep -qx "xslint-vscode-\$\{latest\}\.vsix" <<< "\$\{assets\}"; then\n +echo [^\n]+\n +exit 0\n +fi\n[\s\S]*?gh issue create /,
     'an issue filed before the release carries its vsix links to a missing file',
   )
 })
