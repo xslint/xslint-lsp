@@ -6,6 +6,9 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- List the extension on the VS Code Marketplace, and open an issue every month
+  the listing trails the latest release, since CI cannot publish there (#75).
+
 ## 0.0.16 - 2026-09-30
 
 - Read one `.xslint.yml` per run, the way `xslint` run in the workspace folder

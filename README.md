@@ -122,20 +122,20 @@ Point any LSP client at that command for `.xsl`/`.xslt` files.
 ### Editor extension
 
 A VS Code-compatible extension lives in [`client/`](client); it bundles and
-launches this server. It's published to
-[Open VSX](https://open-vsx.org/extension/maxonfjvipon/xslint-vscode) and
+launches this server. It's published to the
+[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=maxonfjvipon.xslint-vscode)
+and [Open VSX](https://open-vsx.org/extension/maxonfjvipon/xslint-vscode), and
 attached as a `.vsix` to every
-[release](https://github.com/xslint/xslint-lsp/releases/latest) — it is **not**
-on the Microsoft VS Code Marketplace.
+[release](https://github.com/xslint/xslint-lsp/releases/latest).
 
+- **VS Code** — search **xslint** in the Extensions view, or run
+  `code --install-extension maxonfjvipon.xslint-vscode`.
 - **Cursor, VSCodium, Windsurf, Gitpod** — search **xslint** in the Extensions
   view (they install from Open VSX).
-- **VS Code** — `code --install-extension xslint-vscode-<version>.vsix`, or
-  *Extensions → `⋯` → Install from VSIX…* with the release's `.vsix`.
 
 See [`client/README.md`](client/README.md) for the full guide. To hack on the
 extension, open this repo and press `F5`; to build a `.vsix`, run
-`cd client && npm run package`. Releases publish it automatically (see
+`cd client && npm run package`. Releases publish it to Open VSX automatically (see
 [RELEASING.md](RELEASING.md)).
 
 ## Development

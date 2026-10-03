@@ -35,10 +35,15 @@ directly), and — when `OVSX_TOKEN` is set — publishes it to
 [Open VSX](https://open-vsx.org), the marketplace Cursor, VSCodium, Gitpod,
 and Windsurf install from. The extension version mirrors the server version.
 
-The official VS Code Marketplace is not targeted: publishing there needs an
-Azure DevOps token, and creating the organization behind it demands an Azure
-subscription. Open VSX plus the attached `.vsix` cover the same editors
-without that.
+The official VS Code Marketplace is published by hand: publishing there from CI
+needs an Azure DevOps token, and creating the organization behind it demands
+an Azure subscription. On the first of every month,
+[`.github/workflows/marketplace.yml`](.github/workflows/marketplace.yml)
+compares the version the Marketplace lists with the latest release and, when
+it trails, opens an issue mentioning the maintainer. To answer it, download the
+release's `.vsix`, pick *Update* in the extension's menu on the
+[manage page](https://marketplace.visualstudio.com/manage/publishers/maxonfjvipon),
+upload the file, and close the issue.
 
 ## Prerequisites
 

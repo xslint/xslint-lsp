@@ -217,3 +217,59 @@ test('the extension waits for the server before it installs it', function() {
     'a wait standing behind the install lets the install roll the race alone',
   )
 })
+
+test('the Marketplace reminder comes once a month', function() {
+  assert.match(
+    workflow('marketplace.yml'),
+    /^ +- cron: '\d+ \d+ \d+ \* \*'$/m,
+    'a reminder off a monthly schedule either nags or never comes',
+  )
+})
+
+test('the Marketplace reminder files an issue', function() {
+  assert.match(
+    script('marketplace.yml', 'Remind'),
+    /gh issue create /,
+    'a reminder that opens no issue reaches nobody',
+  )
+})
+
+test('the Marketplace reminder mentions the maintainer', function() {
+  assert.match(
+    script('marketplace.yml', 'Remind'),
+    /@maxonfjvipon\b/,
+    'an issue mentioning nobody notifies nobody',
+  )
+})
+
+test('the Marketplace reminder stays quiet while the listing is current', function() {
+  assert.match(
+    script('marketplace.yml', 'Remind'),
+    /if \[ "\$\{listed\}" = "\$\{latest\}" \]; then\n +echo [^\n]+\n +exit 0\n +fi\n/,
+    'a reminder that ignores the listing asks for an upload already made',
+  )
+})
+
+test('the Marketplace reminder fails loudly when the listing reads as nothing', function() {
+  assert.match(
+    script('marketplace.yml', 'Remind'),
+    /if \[ -z "\$\{listed\}" \] \|\| \[ "\$\{listed\}" = null \]; then\n +echo "::error::[^\n]+\n +exit 1\n/,
+    'a gallery that answered nothing cannot be read as a listing that trails',
+  )
+})
+
+test('the Marketplace reminder waits for the release to carry its vsix', function() {
+  assert.match(
+    script('marketplace.yml', 'Remind'),
+    /\.assets\[\]\.name'\)"\n +if ! grep -qx "xslint-vscode-\$\{latest\}\.vsix" <<< "\$\{assets\}"; then\n +echo [^\n]+\n +exit 0\n +fi\n[\s\S]*?gh issue create /,
+    'an issue filed before the release carries its vsix links to a missing file',
+  )
+})
+
+test('the Marketplace reminder stops at the first failing command', function() {
+  assert.match(
+    script('marketplace.yml', 'Remind'),
+    /^ +set -euo pipefail$/m,
+    'a curl failing in front of jq leaves an empty listing for the reminder to report',
+  )
+})
