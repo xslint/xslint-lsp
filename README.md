@@ -42,16 +42,16 @@ The editor sees what `xslint` run at the workspace root sees:
 - **Live buffer.** Every change re-lints the unsaved text; closing a file
   clears its diagnostics.
 - **Whole project.** A document is linted among every stylesheet of its
-  workspace folder, so cross-file checks like `unused-function` and
-  `circular-import` see usages elsewhere. Only the open document's defects are
-  shown.
+  workspace folder, so `unused-function` sees a call made elsewhere and
+  `circular-import` follows imports into other files. Only the open
+  document's defects are shown.
 - **Same files.** `.xsl` and `.xslt` are read; what `.gitignore` or
   `exclude:` skips shows nothing. A file outside every folder is linted alone.
 - **Same config.** One `.xslint.yml`, the first found walking up from the
   folder; `preset:`, `only:`, `rules:` and `exclude:` mean what they mean on
   the command line. Its problems show up as diagnostics on the file itself.
-- **Fresh on save.** Saving re-checks every open document; editing
-  `.xslint.yml` re-checks them too.
+- **Fresh on save.** Saving re-checks every open document; so does editing
+  `.xslint.yml`, where the client lets the server watch files.
 - **Code actions.** A quick-fix per fixable defect (`--fix-suggestions`) and
   *fix all* for the safe ones (`--fix`), byte-for-byte what the CLI writes.
 
