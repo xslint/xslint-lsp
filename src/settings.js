@@ -75,8 +75,9 @@ const refused = function(configs, refusals) {
  * nearest to it by xslint itself, the file it read, the problems of that
  * file, and why it refuses it, if it does. The command line warns about a
  * problem and lints on, so it is a warning here too; it refuses to lint at
- * all under a file no YAML parser reads or one naming a preset that does not
- * exist, which is normal halfway through an edit, and so does the editor, excluding
+ * all under a file no YAML parser reads, one naming a preset that does not
+ * exist, or one whose `only:` holds an entry that is empty or names no check,
+ * which is normal halfway through an edit, and so does the editor, excluding
  * every stylesheet rather than guessing a configuration and showing what no
  * run of `xslint` would report.
  * @param {string} dir - The directory the search for `.xslint.yml` starts in

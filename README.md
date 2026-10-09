@@ -37,7 +37,8 @@ editor  ──(LSP over stdio)──▶  src/server.js
 editor  ◀──(publishDiagnostics)──  { range, severity, code: rule, message }
 ```
 
-The editor sees what `xslint` run at the workspace root sees:
+The editor sees what `xslint` run at the workspace root sees, except that it
+ignores `baseline:` until xslint lets a library apply one (#86):
 
 - **Live buffer.** Every change re-lints the unsaved text; closing a file
   clears its diagnostics.
