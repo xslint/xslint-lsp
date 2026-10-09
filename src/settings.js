@@ -50,16 +50,17 @@ const noted = function(messages, severity) {
 
 /**
  * What a stylesheet shows when xslint refuses its configuration: one error
- * per refusal on its first character, naming the file and the reason and
- * linking to it, since the error on the file itself may sit in a buffer the
- * user never opens and the stylesheet would otherwise look clean.
+ * per refusal on its first character, naming the file and the first line of
+ * the reason, which for unparseable YAML goes on to quote the whole file, and
+ * linking to the file with the whole reason, since the error on the file
+ * itself may sit in a buffer the user never opens.
  * @param {Array.<string>} configs - The refused files, as the editor names them
  * @param {Array.<string>} refusals - Why xslint refuses them
  * @return {Array.<object>} - LSP Diagnostic objects
  */
 const refused = function(configs, refusals) {
   return configs.flatMap((config) => refusals.map((refusal) => ({
-    ...noted([`xslint lints nothing here, since it refuses ${config}: ${refusal}`], 'error')[0],
+    ...noted([`xslint lints nothing here, since it refuses ${config}: ${refusal.split('\n')[0]}`], 'error')[0],
     relatedInformation: [{
       location: {
         uri: pathToFileURL(config).href,

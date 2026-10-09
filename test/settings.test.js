@@ -127,3 +127,24 @@ test('grades the refusal shown on a stylesheet as an error', function() {
     'a stylesheet nothing lints cannot look merely warned',
   )
 })
+
+test('keeps the refusal shown on a stylesheet to one line', function() {
+  const root = project('broken.txt')
+  assert.ok(
+    refused(settled(root).configs, settled(root).refusals).every(
+      (one) => !one.message.includes('\n'),
+    ),
+    'a stylesheet cannot carry the whole configuration xslint failed to parse',
+  )
+})
+
+test('keeps the whole refusal on the link to the configuration', function() {
+  const reason = `Couldn't parse YAML:\nrules: [ ${Math.random()}\n\nCause: unclosed`
+  assert.deepEqual(
+    refused([path.join(os.tmpdir(), 'qv', '.xslint.yml')], [reason]).map(
+      (one) => one.relatedInformation[0].message,
+    ),
+    [reason],
+    'the link to the configuration cannot lose any part of the refusal',
+  )
+})

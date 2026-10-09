@@ -722,14 +722,15 @@ test('drops the refusal from an open stylesheet once the configuration is fixed'
     client.send({method: 'textDocument/didOpen', params: {textDocument: {
       uri: uri, languageId: 'xsl', version: 1,
       text: fixture('violations.xsl')}}})
-    await opened
+    const before = await opened
     fs.writeFileSync(path.join(root, '.xslint.yml'), fixture('silent.yml'))
     client.send({method: 'workspace/didChangeWatchedFiles', params: {changes: [{
       uri: pathToFileURL(path.join(root, '.xslint.yml')).href, type: 2}]}})
-    const found = await client.showing(uri)
+    const after = await client.showing(uri)
     await client.close()
-    assert.ok(
-      !found.some((one) => one.relatedInformation),
+    assert.deepEqual(
+      [before, after].map((seen) => seen.some((one) => one.relatedInformation)),
+      [true, false],
       'a configuration fixed cannot leave its refusal on the stylesheet',
     )
   })
