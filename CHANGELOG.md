@@ -6,6 +6,12 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Show an error on every open stylesheet when xslint refuses `.xslint.yml`,
+  naming the file and the reason, so a stylesheet nothing lints no longer
+  looks clean while the error sits on a file the user may never open (#84).
+  Since xslint 0.7.0 this covers an `only:` entry that is empty or names no
+  check, besides unparseable YAML and an unknown preset.
+
 ## 0.0.17 - 2026-10-09
 
 - Bump `@maxonfjvipon/xslint` to 0.7.0.

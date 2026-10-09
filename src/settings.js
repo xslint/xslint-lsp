@@ -5,6 +5,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const {pathToFileURL} = require('node:url')
 const {settingsOf} = require('@maxonfjvipon/xslint')
 const {diagnostics} = require('./diagnostics')
 
@@ -48,18 +49,41 @@ const noted = function(messages, severity) {
 }
 
 /**
+ * What a stylesheet shows when xslint refuses its configuration: one error
+ * per refusal on its first character, naming the file and the reason and
+ * linking to it, since the error on the file itself may sit in a buffer the
+ * user never opens and the stylesheet would otherwise look clean.
+ * @param {Array.<string>} configs - The refused files, as the editor names them
+ * @param {Array.<string>} refusals - Why xslint refuses them
+ * @return {Array.<object>} - LSP Diagnostic objects
+ */
+const refused = function(configs, refusals) {
+  return configs.flatMap((config) => refusals.map((refusal) => ({
+    ...noted([`xslint lints nothing here, since it refuses ${config}: ${refusal}`], 'error')[0],
+    relatedInformation: [{
+      location: {
+        uri: pathToFileURL(config).href,
+        range: {start: {line: 0, character: 0}, end: {line: 0, character: 1}},
+      },
+      message: refusal,
+    }],
+  })))
+}
+
+/**
  * What `xslint` run from a directory hands `lint`, read off the `.xslint.yml`
- * nearest to it by xslint itself, the file it read, and the problems of that
- * file. The command line warns about a problem and lints on, so it is a
- * warning here too; it refuses to lint at all under a file no YAML parser
- * reads or one naming a preset that does not exist, which is normal halfway
- * through an edit, and so does the editor, excluding every stylesheet rather
- * than guessing a configuration and showing what no run of `xslint` would
- * report.
+ * nearest to it by xslint itself, the file it read, the problems of that
+ * file, and why it refuses it, if it does. The command line warns about a
+ * problem and lints on, so it is a warning here too; it refuses to lint at
+ * all under a file no YAML parser reads or one naming a preset that does not
+ * exist, which is normal halfway through an edit, and so does the editor, excluding
+ * every stylesheet rather than guessing a configuration and showing what no
+ * run of `xslint` would report.
  * @param {string} dir - The directory the search for `.xslint.yml` starts in
  * @return {{settings: object, configs: Array.<string>,
- *  problems: Array.<object>}} - The options `lint` takes, the file they come
- *  from, if any, and its problems as diagnostics
+ *  problems: Array.<object>, refusals: Array.<string>}} - The options `lint`
+ *  takes, the file they come from, if any, its problems as diagnostics, and
+ *  why xslint refuses it
  */
 const settled = function(dir) {
   let found
@@ -69,12 +93,14 @@ const settled = function(dir) {
       settings: settings,
       configs: [settings.file].filter(Boolean),
       problems: noted(settings.problems, 'warning'),
+      refusals: [],
     }
   } catch (error) {
     found = {
       settings: {excluded: () => true, exclude: [], base: dir},
       configs: located(dir),
       problems: noted([error.message], 'error'),
+      refusals: [error.message],
     }
   }
   return found
@@ -83,4 +109,5 @@ const settled = function(dir) {
 module.exports = {
   settled,
   noted,
+  refused,
 }

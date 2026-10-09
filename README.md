@@ -49,7 +49,8 @@ The editor sees what `xslint` run at the workspace root sees:
   `exclude:` skips shows nothing. A file outside every folder is linted alone.
 - **Same config.** One `.xslint.yml`, the first found walking up from the
   folder; `preset:`, `only:`, `rules:` and `exclude:` mean what they mean on
-  the command line. Its problems show up as diagnostics on the file itself.
+  the command line. Its problems show up as diagnostics on the file itself,
+  and a file xslint refuses puts an error on every open stylesheet too.
 - **Fresh on save.** Saving re-checks every open document; so does editing
   `.xslint.yml`, where the client lets the server watch files.
 - **Code actions.** A quick-fix per fixable defect (`--fix-suggestions`) and
