@@ -6,6 +6,10 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+## 0.0.17 - 2026-10-09
+
+- Bump `@maxonfjvipon/xslint` to 0.7.0.
+
 - List the extension on the VS Code Marketplace, and open an issue every month
   the listing trails the latest release, since CI cannot publish there (#75).
 
