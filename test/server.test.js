@@ -338,6 +338,23 @@ const split = function() {
 }
 
 /**
+ * A copy of the committed project under a `.xslint.yml` that names, in its
+ * `records` directory, a baseline recording some of the defects its
+ * stylesheets draw, and fewer of one check than one of them draws.
+ * @return {string} - The project directory
+ */
+const baselined = function() {
+  const root = project()
+  fs.writeFileSync(path.join(root, '.xslint.yml'), fixture('baselined.yml'))
+  fs.mkdirSync(path.join(root, 'records'))
+  fs.writeFileSync(
+    path.join(root, 'records', 'xslint-baseline.json'),
+    fixture('baseline.json'),
+  )
+  return root
+}
+
+/**
  * A workspace holding the named stylesheets and, as its `.xslint.yml`, the
  * named configuration fixture.
  * @param {Array.<string>} names - Stylesheet fixture names
@@ -571,6 +588,8 @@ for (const row of [
   {layout: discovery, name: 'ledger.xsl'},
   {layout: discovery, name: 'generated.xsl'},
   {layout: discovery, name: 'index.xsl'},
+  {layout: baselined, name: 'shelf.xsl'},
+  {layout: baselined, name: 'main.xsl'},
 ]) {
   test(`publishes for ${row.name} of a ${row.layout.name} workspace what the command line run at its root reports for it`,
     {timeout: 20000}, async function() {
@@ -707,6 +726,20 @@ test('tells an open stylesheet why a configuration whose only names no check lin
         (one) => one.message.includes('names no check'),
       ),
       'a stylesheet cannot look clean while its configuration is refused',
+    )
+  })
+
+test('tells an open stylesheet why a baseline that is missing lints nothing',
+  {timeout: 20000}, async function() {
+    const root = baselined()
+    fs.rmSync(path.join(root, 'records'), {recursive: true})
+    assert.deepEqual(
+      (await published(root, 'shelf.xsl', folder(root))).map(
+        (one) => one.message.includes('xslint-baseline.json') &&
+          one.relatedInformation[0].location.uri,
+      ),
+      [pathToFileURL(path.join(root, '.xslint.yml')).href],
+      'a stylesheet cannot look clean or show recorded defects without its baseline',
     )
   })
 

@@ -6,7 +6,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const {pathToFileURL} = require('node:url')
-const {settingsOf} = require('@maxonfjvipon/xslint')
+const {settingsOf, ledgerOf} = require('@maxonfjvipon/xslint')
 const {diagnostics} = require('./diagnostics')
 
 /**
@@ -72,20 +72,46 @@ const refused = function(configs, refusals) {
 }
 
 /**
+ * The baseline the settings name, read the way the command line reads it,
+ * or one recording nothing, under which every defect is fresh. A baseline the
+ * command line refuses to read is refused here too, naming the file, since
+ * the reason JSON gives for text it cannot parse does not.
+ * @param {object} settings - What xslint's `settingsOf` answers
+ * @return {{counts: object, base: string}} - What `baselined` takes
+ */
+const ledgered = function(settings) {
+  let ledger = {counts: {}, base: settings.base}
+  if (settings.baseline) {
+    try {
+      ledger = ledgerOf(settings.baseline)
+    } catch (error) {
+      throw new Error(
+        `Baseline ${settings.baseline} cannot be read: ${error.message}`,
+        {cause: error},
+      )
+    }
+  }
+  return ledger
+}
+
+/**
  * What `xslint` run from a directory hands `lint`, read off the `.xslint.yml`
  * nearest to it by xslint itself, the file it read, the problems of that
- * file, and why it refuses it, if it does. The command line warns about a
+ * file, the baseline it names, and why it refuses it, if it does. The
+ * command line warns about a
  * problem and lints on, so it is a warning here too; it refuses to lint at
  * all under a file no YAML parser reads, one naming a preset that does not
- * exist, or one whose `only:` holds an entry that is empty or names no check,
- * which is normal halfway through an edit, and so does the editor, excluding
+ * exist, one whose `only:` holds an entry that is empty or names no check,
+ * which is normal halfway through an edit, or one whose `baseline:` names a
+ * file it cannot read, and so does the editor, excluding
  * every stylesheet rather than guessing a configuration and showing what no
  * run of `xslint` would report.
  * @param {string} dir - The directory the search for `.xslint.yml` starts in
  * @return {{settings: object, configs: Array.<string>,
- *  problems: Array.<object>, refusals: Array.<string>}} - The options `lint`
- *  takes, the file they come from, if any, its problems as diagnostics, and
- *  why xslint refuses it
+ *  problems: Array.<object>, refusals: Array.<string>,
+ *  ledger: {counts: object, base: string}}} - The options `lint` takes, the
+ *  file they come from, if any, its problems as diagnostics, why xslint
+ *  refuses it, and the baseline it names
  */
 const settled = function(dir) {
   let found
@@ -96,6 +122,7 @@ const settled = function(dir) {
       configs: [settings.file].filter(Boolean),
       problems: noted(settings.problems, 'warning'),
       refusals: [],
+      ledger: ledgered(settings),
     }
   } catch (error) {
     found = {
@@ -103,6 +130,7 @@ const settled = function(dir) {
       configs: located(dir),
       problems: noted([error.message], 'error'),
       refusals: [error.message],
+      ledger: {counts: {}, base: dir},
     }
   }
   return found

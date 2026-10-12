@@ -25,9 +25,13 @@ const fixture = function(name) {
  * @param {string} name - Fixture file name of the document
  * @param {Array.<string>} names - Fixture file names read beside it
  * @param {object} settings - The options `lint` takes
+ * @param {{counts: object, base: string}} ledger - The baseline the
+ *  document is judged under, by default one recording nothing
  * @return {Array.<object>} - The document's defects
  */
-const judged = function(name, names, settings) {
+const judged = function(
+  name, names, settings, ledger = {counts: {}, base: path.sep},
+) {
   const doc = TextDocument.create('file:///shelf.xsl', 'xsl', 1, fixture(name))
   return verdict(
     doc,
@@ -38,6 +42,7 @@ const judged = function(name, names, settings) {
       })),
     ],
     settings,
+    ledger,
   )
 }
 
@@ -48,7 +53,7 @@ test('draws no defect for a stylesheet the run does not read', function() {
         'file:///shelf.xsl', 'xsl', 1, fixture('violations.xsl'),
       ),
       [{file: 'elsewhere.xsl', content: fixture('caller.xsl')}],
-      {},
+      {}, {counts: {}, base: '/'},
     ),
     [],
     'a stylesheet the command line never reads cannot be reported',
@@ -93,3 +98,35 @@ test('runs the preset the settings name', function() {
     'a check of the whole catalog cannot go unrun under the all preset',
   )
 })
+
+test('drops a defect the baseline records', function() {
+  assert.deepEqual(
+    judged(
+      'violations.xsl', [], {},
+      {
+        counts: {'shelf.xsl': {'incorrect-use-of-boolean-constants': 1}},
+        base: path.parse(file('file:///shelf.xsl')).root,
+      },
+    ),
+    [],
+    'a defect the command line passes over cannot be shown',
+  )
+})
+
+test('shows every defect of a check drawn more often than recorded',
+  function() {
+    assert.deepEqual(
+      judged(
+        'project/shelf.xsl', [], {preset: 'all'},
+        {
+          counts: {'shelf.xsl': {
+            'unabbreviated-axis': 1, 'unused-function': 1,
+            'count-compared-to-zero': 1, 'missing-id-in-stylesheet': 1,
+          }},
+          base: path.parse(file('file:///shelf.xsl')).root,
+        },
+      ).map((defect) => defect.name),
+      ['unabbreviated-axis', 'unabbreviated-axis'],
+      'a check whose count rose cannot hide the defect it added',
+    )
+  })

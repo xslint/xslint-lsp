@@ -148,3 +148,75 @@ test('keeps the whole refusal on the link to the configuration', function() {
     'the link to the configuration cannot lose any part of the refusal',
   )
 })
+
+/**
+ * A fresh project under the configuration that names a baseline in its
+ * `records` directory, holding the named baseline fixture there, if any.
+ * @param {Array.<string>} ledger - Baseline fixture names under test/fixtures,
+ *  one at most
+ * @return {string} - The directory holding the configuration
+ */
+const recorded = function(ledger) {
+  const root = project('baselined.yml')
+  fs.mkdirSync(path.join(root, 'records'))
+  for (const name of ledger) {
+    fs.copyFileSync(
+      path.resolve(__dirname, 'fixtures', name),
+      path.join(root, 'records', 'xslint-baseline.json'),
+    )
+  }
+  return root
+}
+
+test('reads the counts of the baseline the configuration names', function() {
+  assert.deepEqual(
+    settled(recorded(['baseline.json'])).ledger.counts['../shelf.xsl'],
+    {'count-compared-to-zero': 1, 'unabbreviated-axis': 1, 'unused-function': 1},
+    'a defect the baseline records cannot be forgotten',
+  )
+})
+
+test('resolves the paths of the baseline against its own directory',
+  function() {
+    const root = recorded(['baseline.json'])
+    assert.equal(
+      settled(path.join(root, 'deep')).ledger.base,
+      path.join(root, 'records'),
+      'a baseline cannot be keyed against any directory but its own',
+    )
+  })
+
+test('records nothing where the configuration names no baseline', function() {
+  assert.deepEqual(
+    settled(project('silent.yml')).ledger.counts,
+    {},
+    'a project without a baseline cannot have a defect recorded',
+  )
+})
+
+test('refuses a configuration whose baseline is missing', function() {
+  assert.ok(
+    settled(recorded([])).refusals.some(
+      (one) => one.includes(path.join('records', 'xslint-baseline.json')),
+    ),
+    'a baseline nobody could read cannot be passed over in silence',
+  )
+})
+
+test('refuses a configuration whose baseline holds line hashes', function() {
+  assert.ok(
+    settled(recorded(['hashed.json'])).refusals.some(
+      (one) => one.includes('line hashes'),
+    ),
+    'a baseline of the old shape cannot be read as if it recorded nothing',
+  )
+})
+
+test('refuses a configuration whose baseline is not JSON', function() {
+  assert.ok(
+    settled(recorded(['broken.txt'])).refusals.some(
+      (one) => one.includes(path.join('records', 'xslint-baseline.json')),
+    ),
+    'a baseline no parser reads cannot go unnamed',
+  )
+})

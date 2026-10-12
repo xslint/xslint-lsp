@@ -50,11 +50,15 @@ const read = function(doc, names) {
  * @param {object} range - The requested range
  * @param {Array.<string>} names - Fixture file names read beside it
  * @param {object} settings - The options `lint` takes
+ * @param {{counts: object, base: string}} ledger - The baseline the
+ *  document is judged under, by default one recording nothing
  * @return {Array.<object>} - The code actions
  */
-const offered = function(name, range, names, settings) {
+const offered = function(
+  name, range, names, settings, ledger = {counts: {}, base: path.sep},
+) {
   const doc = document(name)
-  return actions(doc, range, read(doc, names), settings)
+  return actions(doc, range, read(doc, names), settings, ledger)
 }
 
 /**
@@ -145,7 +149,7 @@ test('offers no fix-all when no safe fix runs', function() {
 
 test('offers no action for a stylesheet the run does not read', function() {
   assert.deepEqual(
-    actions(document('fixable.xsl'), WHOLE, [], {}),
+    actions(document('fixable.xsl'), WHOLE, [], {}, {counts: {}, base: '/'}),
     [],
     'a stylesheet the command line never reads cannot be offered a fix',
   )
@@ -171,9 +175,37 @@ test('offers a quick-fix on a document opened through a link', function() {
     actions(
       doc, WHOLE,
       [{file: canonical(path.join(link, 'fixable.xsl')), content: doc.getText()}],
-      {},
+      {}, {counts: {}, base: root},
     ).find((action) => action.kind === 'quickfix')
       .edit.changes[uri][0].newText.includes('test="true()"'),
     'a document spelled through a link cannot be offered an empty fix',
+  )
+})
+
+test('offers no quick-fix for a defect the baseline records', function() {
+  assert.ok(
+    !offered(
+      'fixable.xsl', WHOLE, [], {},
+      {
+        counts: {'t.xsl': {'incorrect-use-of-boolean-constants': 1}},
+        base: path.parse(file('file:///t.xsl')).root,
+      },
+    ).some((action) => action.kind === 'quickfix'),
+    'a defect the editor does not show cannot be offered a fix',
+  )
+})
+
+test('offers no fix-all for the safe fixes of recorded defects', function() {
+  assert.ok(
+    !offered(
+      'project/main.xsl', WHOLE, [], {preset: 'all'},
+      {
+        counts: {'t.xsl': {
+          'unabbreviated-axis': 1, 'redundant-double-negation': 1,
+        }},
+        base: path.parse(file('file:///t.xsl')).root,
+      },
+    ).some((action) => action.kind === 'source.fixAll'),
+    'a fix-all cannot rewrite what the baseline holds, leaving it stale',
   )
 })

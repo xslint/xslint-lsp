@@ -162,13 +162,13 @@ const cleared = function(config) {
  */
 const check = function(document) {
   const {
-    settings, configs, problems, refusals, stylesheets,
+    settings, configs, problems, refusals, ledger, stylesheets,
   } = judged(file(document.uri))
   noted(configs, problems)
   connection.sendDiagnostics({
     uri: document.uri,
     diagnostics: refused(configs, refusals).concat(diagnostics(
-      verdict(document, sources(stylesheets, buffers()), settings),
+      verdict(document, sources(stylesheets, buffers()), settings, ledger),
     )),
   })
 }
@@ -224,13 +224,24 @@ const acted = function(params) {
   const document = documents.get(params.textDocument.uri)
   let found = []
   if (document) {
-    const {settings, stylesheets} = judged(file(document.uri))
+    const {settings, ledger, stylesheets} = judged(file(document.uri))
     found = actions(
       document, params.range, sources(stylesheets, buffers()), settings,
+      ledger,
     )
   }
   return found
 }
+
+/*
+ * @todo #86:45min Re-check the open documents when the baseline changes on
+ *  disk. The watcher covers `.xslint.yml` alone, so a baseline rewritten by
+ *  `xslint --baseline-write` or `--baseline-prune` shows its old counts until
+ *  the next edit or save. Its path is known only once a configuration names
+ *  it, so register a watcher for each baseline path `settled` answers, the
+ *  first time it is seen, and let `watched` re-check as it does for a
+ *  configuration.
+ */
 
 /**
  * Ask a client that lets the server register for file events to report every
