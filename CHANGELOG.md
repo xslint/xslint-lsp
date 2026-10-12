@@ -6,6 +6,10 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+## 0.0.18 - 2026-10-12
+
+- Bump `@maxonfjvipon/xslint` to 0.8.0.
+
 - Show an error on each open stylesheet a `.xslint.yml` governs when xslint
   refuses that file, naming it, giving the first line of the reason, and
   linking to it with the whole reason, so a stylesheet nothing lints no longer
