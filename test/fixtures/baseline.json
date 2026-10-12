@@ -1,0 +1,11 @@
+{
+  "../main.xsl": {
+    "incorrect-use-of-boolean-constants": 1,
+    "unabbreviated-axis": 1
+  },
+  "../shelf.xsl": {
+    "count-compared-to-zero": 1,
+    "unabbreviated-axis": 1,
+    "unused-function": 1
+  }
+}

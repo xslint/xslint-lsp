@@ -6,6 +6,12 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Apply the baseline `.xslint.yml` names, so an open stylesheet shows only the
+  defects `xslint` run at the root reports, and a defect the editor hides gets
+  no fix (#86). A baseline xslint cannot read puts an error on each open
+  stylesheet, linking to the configuration. The editor reports no stale entry,
+  and a baseline changed on disk is applied on the next edit or save (#91).
+
 ## 0.0.18 - 2026-10-12
 
 - Bump `@maxonfjvipon/xslint` to 0.8.0.

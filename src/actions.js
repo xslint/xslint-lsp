@@ -45,20 +45,25 @@ const rewrite = function(uri, range, title, kind, content, resolves) {
  * Code actions for a document: a quick-fix for every fixable defect whose line
  * falls within the requested range, and a fix-all action for the safe fixes.
  * Each is computed by xslint's own `fixed`, so a quick-fix is what
- * `--fix-suggestions` writes and the fix-all what `--fix` writes. The sources
- * and the settings ride along so a fix is offered beside exactly the defects
- * the diagnostics report.
+ * `--fix-suggestions` writes and the fix-all what `--fix` writes. The sources,
+ * the settings and the baseline ride along so a fix is offered beside exactly
+ * the defects the diagnostics report. A defect the baseline hides has no
+ * diagnostic to attach a fix to, so neither action fixes it; once a check's
+ * count in the document rises past the record, all its defects show and
+ * both fix them.
  * @param {TextDocument} document - The document to act on
  * @param {{start: object, end: object}} range - The requested range
  * @param {Array.<object>} sources - What the run over the document's project
  *  reads, as `lint` takes it
  * @param {object} settings - What xslint's `settingsOf` answers for the
  *  document's project
+ * @param {{counts: object, base: string}} ledger - The baseline of the
+ *  document's project, as `baselined` takes it
  * @return {Array.<object>} - The code actions
  */
-const actions = function(document, range, sources, settings) {
+const actions = function(document, range, sources, settings, ledger) {
   const own = canonical(file(document.uri))
-  const defects = verdict(document, sources, settings)
+  const defects = verdict(document, sources, settings, ledger)
   const span = whole(document)
   const found = []
   for (const defect of defects) {

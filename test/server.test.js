@@ -338,6 +338,23 @@ const split = function() {
 }
 
 /**
+ * A copy of the committed project under a `.xslint.yml` that names, in its
+ * `records` directory, a baseline recording some of the defects its
+ * stylesheets draw, and fewer of one check than one of them draws.
+ * @return {string} - The project directory
+ */
+const baselined = function() {
+  const root = project()
+  fs.writeFileSync(path.join(root, '.xslint.yml'), fixture('baselined.yml'))
+  fs.mkdirSync(path.join(root, 'records'))
+  fs.writeFileSync(
+    path.join(root, 'records', 'xslint-baseline.json'),
+    fixture('baseline.json'),
+  )
+  return root
+}
+
+/**
  * A workspace holding the named stylesheets and, as its `.xslint.yml`, the
  * named configuration fixture.
  * @param {Array.<string>} names - Stylesheet fixture names
@@ -571,6 +588,8 @@ for (const row of [
   {layout: discovery, name: 'ledger.xsl'},
   {layout: discovery, name: 'generated.xsl'},
   {layout: discovery, name: 'index.xsl'},
+  {layout: baselined, name: 'shelf.xsl'},
+  {layout: baselined, name: 'main.xsl'},
 ]) {
   test(`publishes for ${row.name} of a ${row.layout.name} workspace what the command line run at its root reports for it`,
     {timeout: 20000}, async function() {
@@ -710,6 +729,20 @@ test('tells an open stylesheet why a configuration whose only names no check lin
     )
   })
 
+test('tells an open stylesheet why a baseline that is missing lints nothing',
+  {timeout: 20000}, async function() {
+    const root = baselined()
+    fs.rmSync(path.join(root, 'records'), {recursive: true})
+    assert.deepEqual(
+      (await published(root, 'shelf.xsl', folder(root))).map(
+        (one) => one.message.includes('xslint-baseline.json') &&
+          one.relatedInformation[0].location.uri,
+      ),
+      [pathToFileURL(path.join(root, '.xslint.yml')).href],
+      'a stylesheet cannot look clean or show recorded defects without its baseline',
+    )
+  })
+
 test('drops the refusal from an open stylesheet once the configuration is fixed',
   {timeout: 20000}, async function() {
     const root = configured(['violations.xsl'], 'broken.txt')
@@ -732,6 +765,65 @@ test('drops the refusal from an open stylesheet once the configuration is fixed'
       [before, after].map((seen) => seen.some((one) => one.relatedInformation)),
       [true, false],
       'a configuration fixed cannot leave its refusal on the stylesheet',
+    )
+  })
+
+test('reads the baseline again once it is written and the stylesheet edited',
+  {timeout: 20000}, async function() {
+    const root = baselined()
+    const ledger = path.join(root, 'records', 'xslint-baseline.json')
+    fs.rmSync(ledger)
+    const uri = pathToFileURL(path.join(root, 'shelf.xsl')).href
+    const client = new Client()
+    client.send({id: 1, method: 'initialize',
+      params: {processId: process.pid, capabilities: {}, ...folder(root)}})
+    client.send({method: 'initialized', params: {}})
+    const opened = client.about(uri)
+    const text = fs.readFileSync(path.join(root, 'shelf.xsl'), 'utf-8')
+    client.send({method: 'textDocument/didOpen', params: {textDocument: {
+      uri: uri, languageId: 'xsl', version: 1, text: text}}})
+    await opened
+    fs.writeFileSync(ledger, fixture('baseline.json'))
+    const edited = client.about(uri)
+    client.send({method: 'textDocument/didChange', params: {
+      textDocument: {uri: uri, version: 2},
+      contentChanges: [{text: `${text}\n`}]}})
+    const after = await edited
+    await client.close()
+    assert.deepEqual(
+      after.map((one) => one.code),
+      ['unabbreviated-axis', 'unabbreviated-axis'],
+      'a baseline written after the stylesheet opened cannot go unread',
+    )
+  })
+
+test('reads the baseline again once it is pruned and the stylesheet edited',
+  {timeout: 20000}, async function() {
+    const root = baselined()
+    const uri = pathToFileURL(path.join(root, 'shelf.xsl')).href
+    const client = new Client()
+    client.send({id: 1, method: 'initialize',
+      params: {processId: process.pid, capabilities: {}, ...folder(root)}})
+    client.send({method: 'initialized', params: {}})
+    const opened = client.about(uri)
+    const text = fs.readFileSync(path.join(root, 'shelf.xsl'), 'utf-8')
+    client.send({method: 'textDocument/didOpen', params: {textDocument: {
+      uri: uri, languageId: 'xsl', version: 1, text: text}}})
+    const before = await opened
+    fs.writeFileSync(
+      path.join(root, 'records', 'xslint-baseline.json'),
+      fixture('unrecorded.json'),
+    )
+    const edited = client.about(uri)
+    client.send({method: 'textDocument/didChange', params: {
+      textDocument: {uri: uri, version: 2},
+      contentChanges: [{text: `${text}\n`}]}})
+    const after = await edited
+    await client.close()
+    assert.deepEqual(
+      [before.length, after.length],
+      [2, 4],
+      'a defect a baseline no longer records cannot stay hidden',
     )
   })
 

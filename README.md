@@ -32,13 +32,13 @@ editor  ──(LSP over stdio)──▶  src/server.js
                                   │  stylesheetsOf([root], settings) → @xslint/xslint
                                   │  sourceOf(file, buffer ?? disk)  → @xslint/xslint
                                   │  lint(sources, settings) → @xslint/xslint
+                                  │  baselined(defects, ledgerOf(baseline)) → @xslint/xslint
                                   │  diagnostics(defects)  → src/diagnostics.js
                                   ▼
 editor  ◀──(publishDiagnostics)──  { range, severity, code: rule, message }
 ```
 
-The editor sees what `xslint` run at the workspace root sees, except that it
-ignores `baseline:` until xslint lets a library apply one (#86):
+The editor sees what `xslint` run at the workspace root sees:
 
 - **Live buffer.** Every change re-lints the unsaved text; closing a file
   clears its diagnostics.
@@ -53,13 +53,22 @@ ignores `baseline:` until xslint lets a library apply one (#86):
   the command line. Its problems show up as diagnostics on the file itself,
   and a file xslint refuses puts an error on each open stylesheet it
   governs too.
+- **Same baseline.** A defect the file named by `baseline:` records is not
+  shown, and a check drawn in a file more often than recorded shows all its
+  defects there, the split `xslint` runs. Stale entries are left to the
+  command line, which sees the whole project. A baseline xslint cannot read
+  is a refusal like any other.
 - **Fresh on save.** Saving re-checks every open document; so does editing
   `.xslint.yml`, where the client lets the server watch files.
 - **Code actions.** A quick-fix per fixable defect (`--fix-suggestions`) and
   *fix all* for the safe ones (`--fix`), byte-for-byte what the CLI writes.
+  A defect the baseline hides has no diagnostic to attach a fix to, so
+  neither action fixes it; once a check's count in a file rises past the
+  record, all its defects show and both fix them.
 
-Two limits: a stylesheet changed outside the editor is not re-checked until
-the next edit, and a folder added after startup needs a server restart.
+Two limits: a stylesheet or a baseline changed outside the editor is not
+re-checked until the next edit (#91 for the baseline), and a folder added
+after startup needs a server restart.
 
 ## Run it
 

@@ -50,11 +50,15 @@ const read = function(doc, names) {
  * @param {object} range - The requested range
  * @param {Array.<string>} names - Fixture file names read beside it
  * @param {object} settings - The options `lint` takes
+ * @param {{counts: object, base: string}} ledger - The baseline the
+ *  document is judged under, by default one recording nothing
  * @return {Array.<object>} - The code actions
  */
-const offered = function(name, range, names, settings) {
+const offered = function(
+  name, range, names, settings, ledger = {counts: {}, base: path.sep},
+) {
   const doc = document(name)
-  return actions(doc, range, read(doc, names), settings)
+  return actions(doc, range, read(doc, names), settings, ledger)
 }
 
 /**
@@ -145,7 +149,7 @@ test('offers no fix-all when no safe fix runs', function() {
 
 test('offers no action for a stylesheet the run does not read', function() {
   assert.deepEqual(
-    actions(document('fixable.xsl'), WHOLE, [], {}),
+    actions(document('fixable.xsl'), WHOLE, [], {}, {counts: {}, base: '/'}),
     [],
     'a stylesheet the command line never reads cannot be offered a fix',
   )
@@ -171,9 +175,48 @@ test('offers a quick-fix on a document opened through a link', function() {
     actions(
       doc, WHOLE,
       [{file: canonical(path.join(link, 'fixable.xsl')), content: doc.getText()}],
-      {},
+      {}, {counts: {}, base: root},
     ).find((action) => action.kind === 'quickfix')
       .edit.changes[uri][0].newText.includes('test="true()"'),
     'a document spelled through a link cannot be offered an empty fix',
+  )
+})
+
+/**
+ * The code actions offered on a fixture document saved in a fresh temporary
+ * directory, under a baseline there recording the given counts for it.
+ * @param {string} name - Fixture file name of the document
+ * @param {object} settings - The options `lint` takes
+ * @param {object} counts - What the baseline records of the document, by check
+ * @return {Array.<object>} - The code actions
+ */
+const recorded = function(name, settings, counts) {
+  const root = canonical(fs.mkdtempSync(path.join(os.tmpdir(), 'xslint-lsp-')))
+  const doc = TextDocument.create(
+    pathToFileURL(path.join(root, 't.xsl')).href, 'xsl', 1,
+    fs.readFileSync(path.resolve(__dirname, 'fixtures', name), 'utf-8'),
+  )
+  return actions(
+    doc, WHOLE, [{file: path.join(root, 't.xsl'), content: doc.getText()}],
+    settings, {counts: {'t.xsl': counts}, base: root},
+  )
+}
+
+test('offers no quick-fix for a defect the baseline records', function() {
+  assert.ok(
+    !recorded(
+      'fixable.xsl', {}, {'incorrect-use-of-boolean-constants': 1},
+    ).some((action) => action.kind === 'quickfix'),
+    'a defect the editor does not show cannot be offered a fix',
+  )
+})
+
+test('offers no fix-all for the safe fixes of recorded defects', function() {
+  assert.ok(
+    !recorded(
+      'project/main.xsl', {preset: 'all'},
+      {'unabbreviated-axis': 1, 'redundant-double-negation': 1},
+    ).some((action) => action.kind === 'source.fixAll'),
+    'a fix-all cannot rewrite what the baseline holds, leaving it stale',
   )
 })
