@@ -74,8 +74,9 @@ const refused = function(configs, refusals) {
 /**
  * The baseline the settings name, read the way the command line reads it,
  * or one recording nothing, under which every defect is fresh. A baseline the
- * command line refuses to read is refused here too, naming the file, since
- * the reason JSON gives for text it cannot parse does not.
+ * command line refuses to read is refused here too, and named in front of
+ * the reason where the reason does not name it, as JSON's reason for text it
+ * cannot parse does not.
  * @param {object} settings - What xslint's `settingsOf` answers
  * @return {{counts: object, base: string}} - What `baselined` takes
  */
@@ -85,10 +86,11 @@ const ledgered = function(settings) {
     try {
       ledger = ledgerOf(settings.baseline)
     } catch (error) {
-      throw new Error(
-        `Baseline ${settings.baseline} cannot be read: ${error.message}`,
-        {cause: error},
-      )
+      let reason = error.message
+      if (!reason.includes(settings.baseline)) {
+        reason = `Baseline ${settings.baseline} cannot be read: ${reason}`
+      }
+      throw new Error(reason, {cause: error})
     }
   }
   return ledger
@@ -97,13 +99,12 @@ const ledgered = function(settings) {
 /**
  * What `xslint` run from a directory hands `lint`, read off the `.xslint.yml`
  * nearest to it by xslint itself, the file it read, the problems of that
- * file, the baseline it names, and why it refuses it, if it does. The
- * command line warns about a
- * problem and lints on, so it is a warning here too; it refuses to lint at
- * all under a file no YAML parser reads, one naming a preset that does not
- * exist, one whose `only:` holds an entry that is empty or names no check,
- * which is normal halfway through an edit, or one whose `baseline:` names a
- * file it cannot read, and so does the editor, excluding
+ * file, the baseline it names, and why it refuses it, if it does. The command
+ * line warns about a problem and lints on, so it is a warning here too; it
+ * refuses to lint at all under a file no YAML parser reads, one naming a
+ * preset that does not exist, one whose `only:` holds an entry that is empty
+ * or names no check, which is normal halfway through an edit, or one whose
+ * `baseline:` names a file it cannot read, and so does the editor, excluding
  * every stylesheet rather than guessing a configuration and showing what no
  * run of `xslint` would report.
  * @param {string} dir - The directory the search for `.xslint.yml` starts in

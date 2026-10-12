@@ -47,8 +47,10 @@ const rewrite = function(uri, range, title, kind, content, resolves) {
  * Each is computed by xslint's own `fixed`, so a quick-fix is what
  * `--fix-suggestions` writes and the fix-all what `--fix` writes. The sources,
  * the settings and the baseline ride along so a fix is offered beside exactly
- * the defects the diagnostics report: a defect the baseline records is fixed
- * by neither, since fixing it leaves the baseline entry stale.
+ * the defects the diagnostics report. A defect the baseline hides has no
+ * diagnostic to attach a fix to, so neither action fixes it; once a check's
+ * count in the document rises past the record, all its defects show and
+ * both fix them.
  * @param {TextDocument} document - The document to act on
  * @param {{start: object, end: object}} range - The requested range
  * @param {Array.<object>} sources - What the run over the document's project

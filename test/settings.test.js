@@ -220,3 +220,21 @@ test('refuses a configuration whose baseline is not JSON', function() {
     'a baseline no parser reads cannot go unnamed',
   )
 })
+
+for (const row of [
+  {ledger: ['hashed.json'], shape: 'holds line hashes'},
+  {ledger: [], shape: 'is missing'},
+  {ledger: ['broken.txt'], shape: 'is not JSON'},
+]) {
+  test(`names a baseline that ${row.shape} once in its refusal`, function() {
+    const root = recorded(row.ledger)
+    assert.deepEqual(
+      settled(root).refusals.map(
+        (one) => one.split(path.join(root, 'records', 'xslint-baseline.json'))
+          .length - 1,
+      ),
+      [1],
+      'a refusal cannot spell out the same baseline path over and over',
+    )
+  })
+}

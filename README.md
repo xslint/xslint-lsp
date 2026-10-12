@@ -62,12 +62,13 @@ The editor sees what `xslint` run at the workspace root sees:
   `.xslint.yml`, where the client lets the server watch files.
 - **Code actions.** A quick-fix per fixable defect (`--fix-suggestions`) and
   *fix all* for the safe ones (`--fix`), byte-for-byte what the CLI writes.
-  Neither touches a defect the baseline records, since that would leave its
-  entry stale.
+  A defect the baseline hides has no diagnostic to attach a fix to, so
+  neither action fixes it; once a check's count in a file rises past the
+  record, all its defects show and both fix them.
 
 Two limits: a stylesheet or a baseline changed outside the editor is not
-re-checked until the next edit, and a folder added after startup needs a
-server restart.
+re-checked until the next edit (#91 for the baseline), and a folder added
+after startup needs a server restart.
 
 ## Run it
 

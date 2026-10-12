@@ -58,8 +58,10 @@ no save or build needed.
   `baseline:` in `.xslint.yml` mean in the editor exactly what they mean to
   the command line, a problem with the file shows up on the file itself, a
   file xslint refuses shows an error on each open stylesheet it governs, and an
-  edit to it re-checks what you have open. Defects the baseline records stay
-  hidden and get no fix.
+  edit to it re-checks what you have open. A defect the baseline records stays
+  hidden and gets no fix until its check fires in that file more often than
+  recorded, when every defect of that check there shows, as on the command
+  line.
 - **Quick-fixes** — a lightbulb on each fixable defect, plus a *fix all* action
   for the safe fixes. The edits come from xslint's own engine, so a fix in the
   editor is what a command-line `xslint --fix-suggestions` writes, and *fix

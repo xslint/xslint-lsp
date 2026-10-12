@@ -234,7 +234,7 @@ const acted = function(params) {
 }
 
 /*
- * @todo #86:45min Re-check the open documents when the baseline changes on
+ * @todo #91:45min Re-check the open documents when the baseline changes on
  *  disk. The watcher covers `.xslint.yml` alone, so a baseline rewritten by
  *  `xslint --baseline-write` or `--baseline-prune` shows its old counts until
  *  the next edit or save. Its path is known only once a configuration names
