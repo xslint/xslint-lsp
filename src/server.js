@@ -16,7 +16,7 @@ const {actions} = require('./actions')
 const {
   file, canonical, beside, rooted, gathered, sources,
 } = require('./corpus')
-const {settled, noted: graded} = require('./settings')
+const {settled, noted: graded, refused} = require('./settings')
 const {verdict} = require('./verdict')
 
 /**
@@ -150,8 +150,10 @@ const cleared = function(config) {
 /**
  * Lint one document among the other stylesheets of its project and push its
  * diagnostics to the editor, under the `.xslint.yml` that `xslint` run in the
- * document's project reads, whose problems are pushed onto that file.
- * Every open buffer stands in for its own file, so unsaved edits are checked;
+ * document's project reads, whose problems are pushed onto that file. A
+ * configuration xslint refuses leaves an error on the document too, pointing
+ * at that file, so a stylesheet nothing lints never looks clean. Every open
+ * buffer stands in for its own file, so unsaved edits are checked;
  * the rest of the project is there only so that a cross-file check can see a
  * declaration used elsewhere, and the defects found in it belong to those
  * files, not to this one. The configuration is read afresh every time, so an
@@ -159,13 +161,15 @@ const cleared = function(config) {
  * @param {TextDocument} document - The document to lint
  */
 const check = function(document) {
-  const {settings, configs, problems, stylesheets} = judged(file(document.uri))
+  const {
+    settings, configs, problems, refusals, stylesheets,
+  } = judged(file(document.uri))
   noted(configs, problems)
   connection.sendDiagnostics({
     uri: document.uri,
-    diagnostics: diagnostics(
+    diagnostics: refused(configs, refusals).concat(diagnostics(
       verdict(document, sources(stylesheets, buffers()), settings),
-    ),
+    )),
   })
 }
 

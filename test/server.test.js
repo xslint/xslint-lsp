@@ -687,14 +687,53 @@ test('publishes a configuration no parser reads as an error on it',
     )
   })
 
-test('lints nothing under a configuration no parser reads', {timeout: 20000}, async function() {
-  const root = configured(['violations.xsl'], 'broken.txt')
-  assert.deepEqual(
-    await published(root, 'violations.xsl', folder(root)),
-    [],
-    'a stylesheet cannot be judged by a configuration nobody could read',
-  )
-})
+test('shows nothing but the refusal on a stylesheet under a configuration no parser reads',
+  {timeout: 20000}, async function() {
+    const root = configured(['violations.xsl'], 'broken.txt')
+    assert.deepEqual(
+      (await published(root, 'violations.xsl', folder(root))).map(
+        (one) => one.relatedInformation?.[0].location.uri,
+      ),
+      [pathToFileURL(path.join(root, '.xslint.yml')).href],
+      'a stylesheet cannot be judged by a configuration nobody could read',
+    )
+  })
+
+test('tells an open stylesheet why a configuration whose only names no check lints nothing',
+  {timeout: 20000}, async function() {
+    const root = configured(['violations.xsl'], 'nameless.yml')
+    assert.ok(
+      (await published(root, 'violations.xsl', folder(root))).some(
+        (one) => one.message.includes('names no check'),
+      ),
+      'a stylesheet cannot look clean while its configuration is refused',
+    )
+  })
+
+test('drops the refusal from an open stylesheet once the configuration is fixed',
+  {timeout: 20000}, async function() {
+    const root = configured(['violations.xsl'], 'broken.txt')
+    const uri = pathToFileURL(path.join(root, 'violations.xsl')).href
+    const client = new Client()
+    client.send({id: 1, method: 'initialize',
+      params: {processId: process.pid, capabilities: {}, ...folder(root)}})
+    client.send({method: 'initialized', params: {}})
+    const opened = client.about(uri)
+    client.send({method: 'textDocument/didOpen', params: {textDocument: {
+      uri: uri, languageId: 'xsl', version: 1,
+      text: fixture('violations.xsl')}}})
+    const before = await opened
+    fs.writeFileSync(path.join(root, '.xslint.yml'), fixture('silent.yml'))
+    client.send({method: 'workspace/didChangeWatchedFiles', params: {changes: [{
+      uri: pathToFileURL(path.join(root, '.xslint.yml')).href, type: 2}]}})
+    const after = await client.showing(uri)
+    await client.close()
+    assert.deepEqual(
+      [before, after].map((seen) => seen.some((one) => one.relatedInformation)),
+      [true, false],
+      'a configuration fixed cannot leave its refusal on the stylesheet',
+    )
+  })
 
 test('relints the open stylesheets once the configuration changes',
   {timeout: 20000}, async function() {

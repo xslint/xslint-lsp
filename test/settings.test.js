@@ -8,7 +8,8 @@ const assert = require('node:assert')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const {settled} = require('../src/settings')
+const {pathToFileURL} = require('node:url')
+const {settled, refused} = require('../src/settings')
 
 /**
  * A fresh temporary directory holding, as its `.xslint.yml`, a committed
@@ -81,5 +82,69 @@ test('names no configuration where the search found none', function() {
     settled(fs.mkdtempSync(path.join(os.tmpdir(), 'xslint-lsp-'))).configs,
     [],
     'a project without a configuration cannot be given one',
+  )
+})
+
+test('names no refusal under a configuration it reads', function() {
+  assert.deepEqual(
+    settled(project('silent.yml')).refusals,
+    [],
+    'a configuration the command line reads cannot be called refused',
+  )
+})
+
+test('names the refusal of a configuration whose only names no check',
+  function() {
+    assert.ok(
+      settled(project('nameless.yml')).refusals.some(
+        (one) => one.includes('names no check'),
+      ),
+      'an only entry the command line refuses cannot go unexplained',
+    )
+  })
+
+test('points the refusal shown on a stylesheet at the configuration',
+  function() {
+    const config = path.join(
+      os.tmpdir(), `zq${Math.random().toString(36).slice(2)}`, '.xslint.yml',
+    )
+    assert.deepEqual(
+      refused([config], ['Preset \'ölm\' does not exist']).map(
+        (one) => one.relatedInformation[0].location.uri,
+      ),
+      [pathToFileURL(config).href],
+      'a stylesheet cannot be left without a way to the file that stops it',
+    )
+  })
+
+test('grades the refusal shown on a stylesheet as an error', function() {
+  assert.deepEqual(
+    refused(
+      [path.join(os.tmpdir(), 'wy', '.xslint.yml')],
+      [`Chosen substring '${Math.random()}' names no check`],
+    ).map((one) => one.severity),
+    [1],
+    'a stylesheet nothing lints cannot look merely warned',
+  )
+})
+
+test('keeps the refusal shown on a stylesheet to one line', function() {
+  const root = project('broken.txt')
+  assert.ok(
+    refused(settled(root).configs, settled(root).refusals).every(
+      (one) => !one.message.includes('\n'),
+    ),
+    'a stylesheet cannot carry the whole configuration xslint failed to parse',
+  )
+})
+
+test('keeps the whole refusal on the link to the configuration', function() {
+  const reason = `Couldn't parse YAML:\nrules: [ ${Math.random()}\n\nCause: unclosed`
+  assert.deepEqual(
+    refused([path.join(os.tmpdir(), 'qv', '.xslint.yml')], [reason]).map(
+      (one) => one.relatedInformation[0].message,
+    ),
+    [reason],
+    'the link to the configuration cannot lose any part of the refusal',
   )
 })
