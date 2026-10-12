@@ -182,14 +182,30 @@ test('offers a quick-fix on a document opened through a link', function() {
   )
 })
 
+/**
+ * The code actions offered on a fixture document saved in a fresh temporary
+ * directory, under a baseline there recording the given counts for it.
+ * @param {string} name - Fixture file name of the document
+ * @param {object} settings - The options `lint` takes
+ * @param {object} counts - What the baseline records of the document, by check
+ * @return {Array.<object>} - The code actions
+ */
+const recorded = function(name, settings, counts) {
+  const root = canonical(fs.mkdtempSync(path.join(os.tmpdir(), 'xslint-lsp-')))
+  const doc = TextDocument.create(
+    pathToFileURL(path.join(root, 't.xsl')).href, 'xsl', 1,
+    fs.readFileSync(path.resolve(__dirname, 'fixtures', name), 'utf-8'),
+  )
+  return actions(
+    doc, WHOLE, [{file: path.join(root, 't.xsl'), content: doc.getText()}],
+    settings, {counts: {'t.xsl': counts}, base: root},
+  )
+}
+
 test('offers no quick-fix for a defect the baseline records', function() {
   assert.ok(
-    !offered(
-      'fixable.xsl', WHOLE, [], {},
-      {
-        counts: {'t.xsl': {'incorrect-use-of-boolean-constants': 1}},
-        base: path.parse(file('file:///t.xsl')).root,
-      },
+    !recorded(
+      'fixable.xsl', {}, {'incorrect-use-of-boolean-constants': 1},
     ).some((action) => action.kind === 'quickfix'),
     'a defect the editor does not show cannot be offered a fix',
   )
@@ -197,14 +213,9 @@ test('offers no quick-fix for a defect the baseline records', function() {
 
 test('offers no fix-all for the safe fixes of recorded defects', function() {
   assert.ok(
-    !offered(
-      'project/main.xsl', WHOLE, [], {preset: 'all'},
-      {
-        counts: {'t.xsl': {
-          'unabbreviated-axis': 1, 'redundant-double-negation': 1,
-        }},
-        base: path.parse(file('file:///t.xsl')).root,
-      },
+    !recorded(
+      'project/main.xsl', {preset: 'all'},
+      {'unabbreviated-axis': 1, 'redundant-double-negation': 1},
     ).some((action) => action.kind === 'source.fixAll'),
     'a fix-all cannot rewrite what the baseline holds, leaving it stale',
   )
